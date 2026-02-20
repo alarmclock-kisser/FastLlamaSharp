@@ -197,6 +197,7 @@ namespace FastLlamaSharp.Llama
             };
 
             Stopwatch sw = Stopwatch.StartNew();
+            this.LastGenerationStats = new();
             var userMessage = new ChatHistory.Message(AuthorRole.User, prompt);
 
             await foreach (var token in sessionToUse.ChatAsync(userMessage, inferenceParams, cancellationToken))

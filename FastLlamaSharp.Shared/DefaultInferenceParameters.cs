@@ -6,7 +6,7 @@ namespace FastLlamaSharp.Shared
 {
     public class DefaultInferenceParameters
     {
-        public int MaxTokens { get; set; } = 1024;
+        public int MaxTokens { get; set; } = 2048;
         public float Temperature { get; set; } = 0.7f;
         public float TopP { get; set; } = 0.9f;
         public int TopK { get; set; } = 40;

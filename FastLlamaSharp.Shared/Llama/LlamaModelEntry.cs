@@ -11,6 +11,7 @@ namespace FastLlamaSharp.Shared.Llama
         public double ModelFileSizeMb { get; set; }
         public string? MmprojFilePath { get; set; }
         public double? MmprojFileSizeMb { get; set; }
+        public DateTime LastModified { get; set; }
 
         public string DisplayName => this.ToString();
 
@@ -49,6 +50,11 @@ namespace FastLlamaSharp.Shared.Llama
             {
                 throw new FileNotFoundException($"Multiple .gguf model files found in the specified directory: {string.Join(", ", ggufFiles)}");
             }
+
+            var lastModifiedModel = File.GetLastWriteTime(this.ModelFilePath);
+            var lastModifiedMmproj = this.MmprojFilePath != null ? File.GetLastWriteTime(this.MmprojFilePath) : DateTime.MinValue;
+
+            this.LastModified = lastModifiedModel > lastModifiedMmproj ? lastModifiedModel : lastModifiedMmproj;
         }
 
 

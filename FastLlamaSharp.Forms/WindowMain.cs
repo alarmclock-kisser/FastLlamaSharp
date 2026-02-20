@@ -9,6 +9,9 @@ namespace FastLlamaSharp.Forms
 {
     public partial class WindowMain : Form
     {
+        
+
+
         internal readonly LlamaService Llama;
 
         internal readonly DefaultInferenceParameters DefaultInferenceParameters;
@@ -40,6 +43,7 @@ namespace FastLlamaSharp.Forms
             this.NumericUpDown_RegisterToPowOf2(this.numericUpDown_maxTokens);
 
             this.ListBox_BindKnowledgeBase();
+            this.ResetInferenceParameters();
 
             this.Load += this.WindowMain_Load;
         }
@@ -85,22 +89,28 @@ namespace FastLlamaSharp.Forms
             this.listBox_ragEntries.DataSource = this.Llama.LoadedSources;
         }
 
+        private void DomainUpDown_FillSortingOptions()
+        {
+            this.domainUpDown_sortOptions.Items.Clear();
+            string[] options = Enum.GetNames(typeof(SortingOption));
+            this.domainUpDown_sortOptions.Items.AddRange(options);
+            this.domainUpDown_sortOptions.SelectedIndex = 0;
+        }
+
         private void ComboBox_FillModelEntries(string? defaultLlamaModel = null)
         {
+
+            var entries = this.Llama.ModelsEntries.ToArray();
+            if (this.domainUpDown_sortOptions.SelectedItem is string selectedOption && Enum.TryParse<SortingOption>(selectedOption, out var option))
+            {
+                entries = this.Llama.GetModelsSorted(option);
+            }
+
             this.comboBox_models.DataSource = null;
-            this.comboBox_models.DataSource = this.Llama.ModelsEntries;
+            this.comboBox_models.DataSource = entries;
             this.comboBox_models.DisplayMember = nameof(LlamaModelEntry.DisplayName);
 
-            if (string.IsNullOrEmpty(defaultLlamaModel))
-            {
-                // Select smallest model by default
-                var smallestModel = this.Llama.ModelsEntries.OrderBy(m => m.ModelFileSizeMb).FirstOrDefault();
-                if (smallestModel != null)
-                {
-                    this.comboBox_models.SelectedItem = smallestModel;
-                }
-            }
-            else
+            if (!string.IsNullOrEmpty(defaultLlamaModel))
             {
                 // Select model matching defaultLlamaModel if provided
                 var matchingModel = this.Llama.ModelsEntries.FirstOrDefault(m => m.DisplayName.Contains(defaultLlamaModel, StringComparison.OrdinalIgnoreCase));
@@ -363,6 +373,7 @@ namespace FastLlamaSharp.Forms
         {
             this.ResetInferenceParameters();
             this.TextBox_LoadConversationHistory();
+            this.DomainUpDown_FillSortingOptions();
             this.Ui_UpdateState();
 
             StaticLogger.Log("Application started.");
@@ -1197,6 +1208,11 @@ namespace FastLlamaSharp.Forms
         {
             this.richTextBox_conversation.Font = new Font(this.richTextBox_conversation.Font.FontFamily, (float) (this.toolStripComboBox_fontSize.SelectedItem ?? 9f), this.richTextBox_conversation.Font.Style);
             this.TextBox_LoadConversationHistory();
+        }
+
+        private void domainUpDown_sortOptions_SelectedItemChanged(object sender, EventArgs e)
+        {
+            this.ComboBox_FillModelEntries();
         }
     }
 }

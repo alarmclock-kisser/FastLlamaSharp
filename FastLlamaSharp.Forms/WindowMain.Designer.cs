@@ -88,6 +88,7 @@
             this.clearAllToolStripMenuItem = new ToolStripMenuItem();
             this.listBox_llamaLog = new ListBox();
             this.progressBar_modelLoading = new ProgressBar();
+            this.domainUpDown_sortOptions = new DomainUpDown();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_gpuLayerCount).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_contextSize).BeginInit();
             this.groupBox_inferenceParams.SuspendLayout();
@@ -460,20 +461,20 @@
             // 
             this.contextMenuStrip_conversation.Items.AddRange(new ToolStripItem[] { this.setUserColorToolStripMenuItem, this.setAssistantColorToolStripMenuItem, this.fontSizeToolStripMenuItem });
             this.contextMenuStrip_conversation.Name = "contextMenuStrip_conversation";
-            this.contextMenuStrip_conversation.Size = new Size(181, 92);
+            this.contextMenuStrip_conversation.Size = new Size(169, 70);
             this.contextMenuStrip_conversation.Text = "Conversation settings";
             // 
             // setUserColorToolStripMenuItem
             // 
             this.setUserColorToolStripMenuItem.Name = "setUserColorToolStripMenuItem";
-            this.setUserColorToolStripMenuItem.Size = new Size(180, 22);
+            this.setUserColorToolStripMenuItem.Size = new Size(168, 22);
             this.setUserColorToolStripMenuItem.Text = "Set user color";
             this.setUserColorToolStripMenuItem.Click += this.setUserColorToolStripMenuItem_Click;
             // 
             // setAssistantColorToolStripMenuItem
             // 
             this.setAssistantColorToolStripMenuItem.Name = "setAssistantColorToolStripMenuItem";
-            this.setAssistantColorToolStripMenuItem.Size = new Size(180, 22);
+            this.setAssistantColorToolStripMenuItem.Size = new Size(168, 22);
             this.setAssistantColorToolStripMenuItem.Text = "Set assistant color";
             this.setAssistantColorToolStripMenuItem.Click += this.setAssistantColorToolStripMenuItem_Click;
             // 
@@ -481,7 +482,7 @@
             // 
             this.fontSizeToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { this.toolStripComboBox_fontSize });
             this.fontSizeToolStripMenuItem.Name = "fontSizeToolStripMenuItem";
-            this.fontSizeToolStripMenuItem.Size = new Size(180, 22);
+            this.fontSizeToolStripMenuItem.Size = new Size(168, 22);
             this.fontSizeToolStripMenuItem.Text = "Font size";
             // 
             // toolStripComboBox_fontSize
@@ -679,11 +680,25 @@
             this.progressBar_modelLoading.TabIndex = 40;
             this.progressBar_modelLoading.Visible = false;
             // 
+            // domainUpDown_sortOptions
+            // 
+            this.domainUpDown_sortOptions.Items.Add("Name ↓");
+            this.domainUpDown_sortOptions.Items.Add("Newest");
+            this.domainUpDown_sortOptions.Items.Add("Smallest");
+            this.domainUpDown_sortOptions.Items.Add("Vision");
+            this.domainUpDown_sortOptions.Location = new Point(654, 12);
+            this.domainUpDown_sortOptions.Name = "domainUpDown_sortOptions";
+            this.domainUpDown_sortOptions.Size = new Size(70, 23);
+            this.domainUpDown_sortOptions.TabIndex = 41;
+            this.domainUpDown_sortOptions.Text = "sorting";
+            this.domainUpDown_sortOptions.SelectedItemChanged += this.domainUpDown_sortOptions_SelectedItemChanged;
+            // 
             // WindowMain
             // 
             this.AutoScaleDimensions = new SizeF(7F, 15F);
             this.AutoScaleMode = AutoScaleMode.Font;
             this.ClientSize = new Size(1424, 681);
+            this.Controls.Add(this.domainUpDown_sortOptions);
             this.Controls.Add(this.progressBar_modelLoading);
             this.Controls.Add(this.listBox_llamaLog);
             this.Controls.Add(this.listBox_ragEntries);
@@ -801,5 +816,6 @@
         private ToolStripMenuItem setAssistantColorToolStripMenuItem;
         private ToolStripMenuItem fontSizeToolStripMenuItem;
         private ToolStripComboBox toolStripComboBox_fontSize;
+        private DomainUpDown domainUpDown_sortOptions;
     }
 }

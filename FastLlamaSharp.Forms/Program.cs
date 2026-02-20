@@ -23,10 +23,9 @@ namespace FastLlamaSharp.Forms
             var defaultLlamaModel = configuration.GetValue<string>("DefaultLlamaModel");
             var defaultContextSize = configuration.GetValue<int>("DefaultContextSize");
             var systemPrompts = configuration.GetSection("SystemPrompts").Get<List<string>>();
-            var defaultInferenceParameters = configuration.GetSection("DefaultInferenceParameters").Get<DefaultInferenceParameters>();
+            var defaultInferenceParameters = configuration.GetSection("DefaultInferenceParameters").Get<DefaultInferenceParameters>() ?? new DefaultInferenceParameters();
 
-
-            LlamaService llamaService = new(modelDirectories, systemPrompts);
+            LlamaService llamaService = new(modelDirectories, systemPrompts, defaultInferenceParameters);
 
             // Init log files
             string logDirectory = Path.Combine(llamaService.ContextsDirectory, "..", "Logs");

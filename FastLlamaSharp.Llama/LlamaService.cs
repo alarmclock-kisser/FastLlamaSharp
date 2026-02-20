@@ -13,7 +13,7 @@ namespace FastLlamaSharp.Llama
 
 
 
-        public LlamaService(IEnumerable<string>? additionalModelDirectories = null, IEnumerable<string>? systemPrompts = null)
+        public LlamaService(IEnumerable<string>? additionalModelDirectories = null, IEnumerable<string>? systemPrompts = null, DefaultInferenceParameters? defaultInferenceParameters = null)
         {
             if (!Directory.Exists(this.ContextsDirectory))
             {
@@ -29,9 +29,26 @@ namespace FastLlamaSharp.Llama
                 this.SystemPrompt = string.Join(" ", systemPrompts.Select(p => p.TrimEnd('.') + "."));
             }
 
+            this.SystemPrompt += this.BuildDefaultInferenceParamsSystemPrompt(defaultInferenceParameters ?? new DefaultInferenceParameters());
+
             this.GetModelEntries(additionalModelDirectories?.ToArray());
         }
 
+
+        public string BuildDefaultInferenceParamsSystemPrompt(DefaultInferenceParameters parameters)
+        {
+            // Build system prompt string to inform model about inference parameters and GPU layer count
+            return $"Default Inference Parameters: [" +
+                   $"MaxTokens: {parameters.MaxTokens}, " +
+                   $"Temperature: {parameters.Temperature}, " +
+                   $"TopP: {parameters.TopP}, " +
+                   $"TopK: {parameters.TopK}, " +
+                   $"MinP: {parameters.MinP}, " +
+                   $"RepetitionPenalty: {parameters.RepetitionPenalty}, " +
+                   $"FrequencyPenalty: {parameters.FrequencyPenalty}, " +
+                   $"Isolated: {parameters.Isolated}, " +
+                   $"GpuLayerCount: {this._gpuLayerCount}]";
+        }
 
 
         public List<LlamaModelEntry> GetModelEntries(string[]? additionalModelDirectories = null)
@@ -62,10 +79,35 @@ namespace FastLlamaSharp.Llama
 
 
 
+        public LlamaModelEntry[] GetModelsSorted(SortingOption option = SortingOption.Name)
+        {
+            return option switch
+            {
+                SortingOption.Name => this.ModelsEntries.OrderBy(m => m.DisplayName).ToArray(),
+                SortingOption.Newest => this.ModelsEntries.OrderByDescending(m => m.LastModified).ToArray(),
+                SortingOption.Smallest => this.ModelsEntries.OrderBy(m => m.ModelFileSizeMb).ToArray(),
+                SortingOption.Vision => this.ModelsEntries.OrderByDescending(m => !string.IsNullOrEmpty(m.MmprojFilePath)).ToArray(),
+                _ => this.ModelsEntries.ToArray(),
+            };
+        }
+
+
         public void Dispose()
         {
 
             GC.SuppressFinalize(this);
+        }
+
+
+
+
+
+        public enum SortingOption
+        {
+            Name,
+            Newest,
+            Smallest,
+            Vision
         }
     }
 }
