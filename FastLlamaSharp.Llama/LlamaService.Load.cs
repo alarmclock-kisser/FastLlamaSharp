@@ -36,7 +36,10 @@ namespace FastLlamaSharp.Llama
                 ModelParams @params = new(loadRequest.ModelEntry.ModelFilePath)
                 {
                     ContextSize = (uint) loadRequest.ContextSize,
-                    GpuLayerCount = loadRequest.GpuLayerCount
+                    GpuLayerCount = loadRequest.GpuLayerCount,
+                    FlashAttention = false,
+                    BatchSize = 128,
+                    UBatchSize = 128,
                 };
 
                 StaticLogger.Log($"Loading model from {loadRequest.ModelEntry.ModelFilePath} with context size {@params.ContextSize} and GPU layer count {@params.GpuLayerCount}");
@@ -53,7 +56,8 @@ namespace FastLlamaSharp.Llama
                         MtmdContextParams mtmdParams = new()
                         {
                             UseGpu = this._gpuLayerCount > 0 || this._gpuLayerCount == -1,
-                            Warmup = loadRequest.WarmupMmproj
+                            Warmup = loadRequest.WarmupMmproj,
+                            FlashAttentionType = LLamaFlashAttentionType.LLAMA_FLASH_ATTENTION_TYPE_DISABLED
                         };
 
                         this._mtmdWeights = MtmdWeights.LoadFromFile(loadRequest.ModelEntry.MmprojFilePath, this._llamaWeights, mtmdParams);

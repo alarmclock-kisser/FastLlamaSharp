@@ -20,6 +20,10 @@ namespace FastLlamaSharp.Llama
                 Directory.CreateDirectory(this.ContextsDirectory);
             }
 
+            LLama.Native.NativeLogConfig.llama_log_set((level, text) => {
+                StaticLogger.Log($"[Native LLama]: {text.Trim()}");
+            });
+
             if (systemPrompts != null)
             {
                 this.SystemPrompt = string.Join(" ", systemPrompts.Select(p => p.TrimEnd('.') + "."));

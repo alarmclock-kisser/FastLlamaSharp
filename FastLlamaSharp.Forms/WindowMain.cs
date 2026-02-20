@@ -1,6 +1,8 @@
 using FastLlamaSharp.Llama;
 using FastLlamaSharp.Shared;
 using FastLlamaSharp.Shared.Llama;
+using System.Text;
+using static FastLlamaSharp.Llama.LlamaService;
 using Timer = System.Windows.Forms.Timer;
 
 namespace FastLlamaSharp.Forms
@@ -36,6 +38,8 @@ namespace FastLlamaSharp.Forms
             this.NumericUpDown_RegisterToPowOf2(this.numericUpDown_contextSize);
             this.NumericUpDown_RegisterToPowOf2(this.numericUpDown_maxTokens);
 
+            this.ListBox_BindKnowledgeBase();
+
             this.Load += this.WindowMain_Load;
         }
 
@@ -46,19 +50,38 @@ namespace FastLlamaSharp.Forms
         private void ListBox_BindStaticLogger()
         {
             this.listBox_log.Items.Clear();
+            this.listBox_llamaLog.Items.Clear();
             this.listBox_log.DataSource = null;
+            this.listBox_llamaLog.DataSource = null;
             this.listBox_log.DataSource = StaticLogger.LogEntriesBindingList;
+            this.listBox_llamaLog.DataSource = StaticLogger.NativeLlamaLogEntriesBindingList;
             StaticLogger.LogAdded += (s) =>
             {
                 if (this.InvokeRequired)
                 {
                     this.Invoke(new Action(() => this.listBox_log.TopIndex = this.listBox_log.Items.Count - 1));
+                    this.Invoke(new Action(() => this.listBox_llamaLog.TopIndex = this.listBox_llamaLog.Items.Count - 1));
                 }
                 else
                 {
                     this.listBox_log.TopIndex = this.listBox_log.Items.Count - 1;
+                    this.listBox_llamaLog.TopIndex = this.listBox_llamaLog.Items.Count - 1;
                 }
             };
+
+            // Set StaticLogger's UI context to this form's context so it can auto-invoke when logging from other threads
+            var context = SynchronizationContext.Current;
+            if (context != null)
+            {
+                StaticLogger.SetUiContext(context);
+            }
+        }
+
+        private void ListBox_BindKnowledgeBase()
+        {
+            this.listBox_ragEntries.Items.Clear();
+            this.listBox_ragEntries.DataSource = null;
+            this.listBox_ragEntries.DataSource = this.Llama.LoadedSources;
         }
 
         private void ComboBox_FillModelEntries(string? defaultLlamaModel = null)
@@ -176,6 +199,7 @@ namespace FastLlamaSharp.Forms
                 this.button_loadContext.Enabled = true;
                 this.groupBox_inferenceParams.Enabled = true;
                 this.checkBox_autoSave.Enabled = this.Llama.CurrentlySavedContextPath != null;
+                this.button_files.Enabled = true;
             }
             else
             {
@@ -188,6 +212,7 @@ namespace FastLlamaSharp.Forms
                 this.button_loadContext.Enabled = false;
                 this.groupBox_inferenceParams.Enabled = false;
                 this.checkBox_autoSave.Enabled = false;
+                this.button_files.Enabled = false;
             }
         }
 
@@ -218,6 +243,26 @@ namespace FastLlamaSharp.Forms
 
             // If single entry, copy that
             if (this.listBox_log.SelectedItem is string logEntry)
+            {
+                Clipboard.SetText(logEntry);
+            }
+        }
+
+        private void listBox_llamaLog_DoubleClick(object sender, EventArgs e)
+        {
+            if (ModifierKeys.HasFlag(Keys.Control))
+            {
+                // If multiple entries, copy all selected
+                var allEntries = StaticLogger.NativeLlamaLogEntriesBindingList;
+                if (allEntries.Any())
+                {
+                    Clipboard.SetText(string.Join(Environment.NewLine, allEntries));
+                }
+                return;
+            }
+
+            // If single entry, copy that
+            if (this.listBox_llamaLog.SelectedItem is string logEntry)
             {
                 Clipboard.SetText(logEntry);
             }
@@ -362,36 +407,39 @@ namespace FastLlamaSharp.Forms
                 return;
             }
 
-            // 1. User-Nachricht SOFORT in der UI anzeigen (Rechtsbündig)
+            // 1. UI Update (User Message)
             this.richTextBox_conversation.SelectionStart = this.richTextBox_conversation.TextLength;
             this.richTextBox_conversation.SelectionLength = 0;
             this.richTextBox_conversation.SelectionAlignment = HorizontalAlignment.Right;
             this.richTextBox_conversation.SelectionColor = this.UserMessageColor;
+            this.richTextBox_conversation.SelectionFont = new Font(this.richTextBox_conversation.Font, FontStyle.Bold);
             this.richTextBox_conversation.AppendText($"User: {prompt}{Environment.NewLine}{Environment.NewLine}");
             this.richTextBox_conversation.ScrollToCaret();
 
-            // 2. Eingabefeld leeren und Button sperren
+            // 2. Lock UI
             this.textBox_prompt.Enabled = false;
             this.button_send.Text = "Cancel";
             this.button_send.BackColor = Color.LightCoral;
             this.button_send.Click -= this.button_send_Click;
             this.button_send.Click += this.button_cancel_Click;
 
-            // 3. UI für LLM-Antwort vorbereiten (Linksbündig)
+            // 3. UI Update (Assistant Start)
             this.richTextBox_conversation.SelectionStart = this.richTextBox_conversation.TextLength;
             this.richTextBox_conversation.SelectionLength = 0;
             this.richTextBox_conversation.SelectionAlignment = HorizontalAlignment.Left;
             this.richTextBox_conversation.SelectionColor = this.AssistantMessageColor;
+            this.richTextBox_conversation.SelectionFont = new Font(this.richTextBox_conversation.Font, FontStyle.Bold);
             this.richTextBox_conversation.AppendText("Assistant: ");
 
             this._generationCts = new CancellationTokenSource();
             var token = this._generationCts.Token;
+
             this._generationStarted = DateTime.UtcNow;
             this._generationTimer = new Timer { Interval = 80 };
             this._generationTimer.Tick += this.Timer_generation_Tick;
-            this._generationTimer.Enabled = true;
             this._generationTimer.Start();
 
+            int imageResizeMaxWidth = (int) this.numericUpDown_maxWidthPx.Value;
             bool isolated = this.checkBox_isolated.Checked;
             int maxTokens = (int) this.numericUpDown_maxTokens.Value;
             float temperature = (float) this.numericUpDown_temperature.Value;
@@ -401,49 +449,188 @@ namespace FastLlamaSharp.Forms
             float repetitionPenalty = (float) this.numericUpDown_repetitionPenalty.Value;
             float frequencyPenalty = (float) this.numericUpDown_frequencyPenalty.Value;
 
+            // --- RAG LOGIC ---
+            string finalPromptForLlm = prompt;
+
+            if (this.checkBox_rag.Checked && this.Llama.LoadedSources.Count > 0)
+            {
+                await StaticLogger.LogAsync("RAG: Searching knowledge base...");
+                string relevantContext = await this.Llama.SearchRelevantContextAsync(prompt, 3);
+
+                if (!string.IsNullOrWhiteSpace(relevantContext))
+                {
+                    finalPromptForLlm =
+                        "Answer the user's question based strictly on the provided context below. " +
+                        "If the context does not contain the answer, say 'I don't have information about this in my loaded documents.'\n\n" +
+                        relevantContext + "\n\n" +
+                        $"User Question: {prompt}";
+
+                    await StaticLogger.LogAsync("RAG: Context injected.");
+                }
+                else
+                {
+                    finalPromptForLlm =
+                        "The user is asking a question, but no relevant context was found in your documents. " +
+                        "Reply exactly with: 'I don't have information about this in my loaded documents.'\n\n" +
+                        $"User Question: {prompt}";
+
+                    await StaticLogger.LogAsync("RAG: No context found. Injecting fallback prompt.");
+                }
+            }
+
             try
             {
-                // Den Stream abfragen (Hier passiert noch keine Generierung!)
                 var responseStream = this.Llama.GenerateResponseAsync(
-                    prompt,
-                    null,
-                    this.AttachedImages,
-                    isolated,
-                    maxTokens,
-                    temperature,
-                    topP,
-                    topK,
-                    minP,
-                    repetitionPenalty,
-                    frequencyPenalty,
-                    null,
-                    token);
+                    finalPromptForLlm, null, this.AttachedImages, imageResizeMaxWidth, isolated,
+                    maxTokens, temperature, topP, topK, minP, repetitionPenalty, frequencyPenalty, null, token);
 
-                // 4. Den IAsyncEnumerable-Stream Stück für Stück auslesen
                 int currentLine = this.richTextBox_conversation.GetLineFromCharIndex(this.richTextBox_conversation.TextLength);
+
+                // --- STREAMING MARKDOWN & THINK PARSER ---
+                bool isThinking = false;
+                bool isBold = false;
+                bool isItalic = false;
+                bool isStrike = false;
+
+                float normalSize = this.richTextBox_conversation.Font.Size;
+                float thinkSize = Math.Max(normalSize - 2f, 7f); // Kleinere Schriftart für <think>
+                string fontFamily = this.richTextBox_conversation.Font.FontFamily.Name;
+
+                StringBuilder tokenBuffer = new StringBuilder();
+
+                // Lokale Hilfsfunktion zum sauberen Schreiben mit aktuellem Style
+                Action<string> appendFormatted = (textToPrint) =>
+                {
+                    if (string.IsNullOrEmpty(textToPrint))
+                    {
+                        return;
+                    }
+
+                    this.richTextBox_conversation.SelectionStart = this.richTextBox_conversation.TextLength;
+                    this.richTextBox_conversation.SelectionLength = 0;
+
+                    FontStyle currentStyle = FontStyle.Regular;
+                    if (isThinking)
+                    {
+                        currentStyle |= FontStyle.Italic;
+                    }
+
+                    if (isBold)
+                    {
+                        currentStyle |= FontStyle.Bold;
+                    }
+
+                    if (isItalic)
+                    {
+                        currentStyle |= FontStyle.Italic;
+                    }
+
+                    if (isStrike)
+                    {
+                        currentStyle |= FontStyle.Strikeout;
+                    }
+
+                    this.richTextBox_conversation.SelectionFont = new Font(fontFamily, isThinking ? thinkSize : normalSize, currentStyle);
+                    this.richTextBox_conversation.SelectionColor = isThinking ? Color.Gray : this.AssistantMessageColor;
+                    this.richTextBox_conversation.AppendText(textToPrint);
+                };
+
+                string[] tags = { "<think>", "</think>", "**", "__", "~~", "*", "_", "~" };
 
                 await foreach (var textToken in responseStream)
                 {
-                    // Jeden frisch generierten Schnipsel sofort in die Textbox hängen
-                    // Setze sicherheitshalber Alignment und Farbe auf Assistant-Farbe
-                    this.richTextBox_conversation.SelectionStart = this.richTextBox_conversation.TextLength;
-                    this.richTextBox_conversation.SelectionLength = 0;
-                    this.richTextBox_conversation.SelectionAlignment = HorizontalAlignment.Left;
-                    this.richTextBox_conversation.SelectionColor = this.AssistantMessageColor;
-                    this.richTextBox_conversation.AppendText(textToken);
+                    // Unsichtbare System-Tokens direkt rausfiltern
+                    string safeToken = textToken.Replace("<|im_end|>", "").Replace("<|im_start|>", "");
+                    tokenBuffer.Append(safeToken);
+                    string bufferStr = tokenBuffer.ToString();
 
-                    // Prüfen, ob wir in einer neuen Zeile gelandet sind
+                    // Warten, wenn der Puffer mitten in einem Tag enden könnte (z.B. "<thi" oder "*")
+                    if (bufferStr.EndsWith("<") || bufferStr.EndsWith("<t") || bufferStr.EndsWith("<th") || bufferStr.EndsWith("<thi") || bufferStr.EndsWith("<thin") || bufferStr.EndsWith("<think") ||
+                        bufferStr.EndsWith("</") || bufferStr.EndsWith("</t") || bufferStr.EndsWith("</th") || bufferStr.EndsWith("</thi") || bufferStr.EndsWith("</thin") || bufferStr.EndsWith("</think") ||
+                        bufferStr.EndsWith("*") || bufferStr.EndsWith("_") || bufferStr.EndsWith("~"))
+                    {
+                        continue; // Wir warten auf das nächste Token vom Stream
+                    }
+
+                    // Puffer verarbeiten
+                    while (bufferStr.Length > 0)
+                    {
+                        int nextTagIndex = bufferStr.Length;
+                        string foundTag = "";
+
+                        foreach (var tag in tags)
+                        {
+                            int idx = bufferStr.IndexOf(tag);
+                            if (idx != -1)
+                            {
+                                // Schutz vor Aufzählungszeichen (Bullet Points): "* Item" ist NICHT kursiv!
+                                if ((tag == "*" || tag == "_") && idx + tag.Length < bufferStr.Length && char.IsWhiteSpace(bufferStr[idx + tag.Length]))
+                                {
+                                    continue;
+                                }
+
+                                if (idx < nextTagIndex)
+                                {
+                                    nextTagIndex = idx;
+                                    foundTag = tag;
+                                }
+                            }
+                        }
+
+                        if (nextTagIndex == bufferStr.Length)
+                        {
+                            // Kein Tag gefunden -> Alles drucken
+                            appendFormatted(bufferStr);
+                            bufferStr = "";
+                        }
+                        else
+                        {
+                            // Text VOR dem Tag drucken
+                            if (nextTagIndex > 0)
+                            {
+                                appendFormatted(bufferStr.Substring(0, nextTagIndex));
+                            }
+
+                            // State toggeln (Tag anwenden)
+                            if (foundTag == "<think>") { isThinking = true; appendFormatted("\n\n[ Thinking Process Started... ]\n"); }
+                            else if (foundTag == "</think>") { isThinking = false; appendFormatted("\n[ Thinking Process Finished ]\n\n"); }
+                            else if (foundTag == "**" || foundTag == "__")
+                            {
+                                isBold = !isBold;
+                            }
+                            else if (foundTag == "*" || foundTag == "_")
+                            {
+                                isItalic = !isItalic;
+                            }
+                            else if (foundTag == "~~" || foundTag == "~")
+                            {
+                                isStrike = !isStrike;
+                            }
+
+                            // Tag aus Puffer entfernen
+                            bufferStr = bufferStr.Substring(nextTagIndex + foundTag.Length);
+                        }
+                    }
+
+                    tokenBuffer.Clear();
+
+                    // Auto-Scroll Logik
                     int newLine = this.richTextBox_conversation.GetLineFromCharIndex(this.richTextBox_conversation.TextLength);
-
                     if (newLine > currentLine)
                     {
-                        // Nur scrollen, wenn eine neue Zeile begonnen wurde (hart oder durch WordWrap)
                         this.richTextBox_conversation.ScrollToCaret();
                         currentLine = newLine;
                     }
                 }
 
-                // 5. Wenn er fertig ist, schließen wir die Nachricht mit Abstand ab
+                // Falls am Ende noch Reste im Puffer sind
+                if (tokenBuffer.Length > 0)
+                {
+                    appendFormatted(tokenBuffer.ToString());
+                }
+
+                // Reset für nächste Nachricht
+                this.richTextBox_conversation.SelectionFont = new Font(this.richTextBox_conversation.Font, FontStyle.Regular);
                 this.richTextBox_conversation.AppendText($"{Environment.NewLine}{Environment.NewLine}");
                 this.richTextBox_conversation.ScrollToCaret();
 
@@ -452,19 +639,17 @@ namespace FastLlamaSharp.Forms
             catch (OperationCanceledException)
             {
                 await StaticLogger.LogAsync("Generation canceled.");
-                // Markieren, dass abgebrochen wurde
-                this.richTextBox_conversation.AppendText($" [Abgebrochen]{Environment.NewLine}{Environment.NewLine}");
+                this.richTextBox_conversation.AppendText($" [Canceled]{Environment.NewLine}{Environment.NewLine}");
                 this.richTextBox_conversation.ScrollToCaret();
             }
             catch (Exception ex)
             {
                 StaticLogger.Log($"Error during generation: {ex.Message}");
-                this.richTextBox_conversation.AppendText($" [Fehler: {ex.Message}]{Environment.NewLine}{Environment.NewLine}");
+                this.richTextBox_conversation.AppendText($" [Error: {ex.Message}]{Environment.NewLine}{Environment.NewLine}");
             }
             finally
             {
                 this.Ui_UpdateState();
-
                 this.textBox_prompt.Enabled = true;
                 this.textBox_prompt.Clear();
                 this.textBox_prompt.Focus();
@@ -472,26 +657,18 @@ namespace FastLlamaSharp.Forms
                 this.button_send.BackColor = SystemColors.Info;
                 this.button_send.Click -= this.button_cancel_Click;
                 this.button_send.Click += this.button_send_Click;
+
                 if (this._generationTimer != null)
                 {
                     this._generationTimer.Stop();
-                    this._generationTimer.Tick -= this.Timer_generation_Tick;
                     this._generationTimer.Dispose();
                     this._generationTimer = null;
-                    this._generationStarted = null;
                 }
 
                 if (this.checkBox_autoSave.Checked && this.Llama.CurrentlySavedContextPath != null)
                 {
-                    try
-                    {
-                        this.Llama.SaveFullSession(this.Llama.CurrentlySavedContextPath);
-                        StaticLogger.Log($"Auto-saved context.");
-                    }
-                    catch (Exception ex)
-                    {
-                        StaticLogger.Log($"Error auto-saving context: {ex.Message}");
-                    }
+                    try { this.Llama.SaveFullSession(this.Llama.CurrentlySavedContextPath); }
+                    catch (Exception ex) { StaticLogger.Log($"Auto-save error: {ex.Message}"); }
                 }
             }
         }
@@ -539,7 +716,16 @@ namespace FastLlamaSharp.Forms
             this.ResetInferenceParameters();
         }
 
-
+        private void button_images_MouseDown(object sender, MouseEventArgs e)
+        {
+            // If right-clicked, remove attached images
+            if (e.Button == MouseButtons.Right)
+            {
+                this.AttachedImages = null;
+                this.label_attachedImages.Text = "Images attached: -";
+                StaticLogger.Log("Attached images removed.");
+            }
+        }
 
 
 
@@ -665,5 +851,105 @@ namespace FastLlamaSharp.Forms
             this.TextBox_LoadConversationHistory();
             this.Ui_UpdateState();
         }
+
+
+
+        // RAG
+        private void checkBox_rag_CheckedChanged(object sender, EventArgs e)
+        {
+            this.numericUpDown_ragTopK.Enabled = this.checkBox_rag.Checked;
+            this.label_info_ragTopK.ForeColor = this.checkBox_rag.Checked ? Color.Black : Color.Gray;
+        }
+
+        private async void button_files_Click(object sender, EventArgs e)
+        {
+            if (this.Llama.CurrentLoadedModelEntry == null)
+            {
+                await StaticLogger.LogAsync("No model loaded. Cannot process RAG files.");
+                return;
+            }
+
+            using OpenFileDialog ofd = new() { Multiselect = true, Filter = "JSON|*.json|Text|*.txt;*.log|Code|*.cs;*.py;*.js;*.java|All Files|*.*" };
+
+            if (ofd.ShowDialog() == DialogResult.OK)
+            {
+                this.button_files.Enabled = false;
+                this.Cursor = Cursors.WaitCursor;
+
+                try
+                {
+                    foreach (var file in ofd.FileNames)
+                    {
+                        string extension = Path.GetExtension(file).ToLower();
+                        if (extension == ".json")
+                        {
+                            await this.Llama.LoadGenericJsonAsync(file);
+                        }
+                        else
+                        {
+                            await this.Llama.LoadTextFileAsync(file);
+                        }
+                    }
+                }
+                finally
+                {
+                    this.button_files.Enabled = true;
+                    this.Cursor = Cursors.Default;
+                }
+            }
+        }
+
+        private void listBox_ragEntries_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (this.listBox_ragEntries.Items.Count == 0)
+            {
+                return; // Keine Einträge, also nichts zu tun
+            }
+
+            // If right-clicked, open context menu strip
+            if (e.Button == MouseButtons.Right)
+            {
+                int index = this.listBox_ragEntries.IndexFromPoint(e.Location);
+                if (index != ListBox.NoMatches)
+                {
+                    this.contextMenuStrip_rag.Show(this.listBox_ragEntries, e.Location);
+                }
+            }
+        }
+
+        private void removeToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            // Get selected entry and remove from knowledge base (under mouse element if no item selected)
+            int index = this.listBox_ragEntries.SelectedIndex >= 0 ? this.listBox_ragEntries.SelectedIndex : this.listBox_ragEntries.IndexFromPoint(this.listBox_ragEntries.PointToClient(Cursor.Position));
+            if (index != ListBox.NoMatches)
+            {
+                var entry = this.listBox_ragEntries.Items[index] as string;
+                if (entry != null)
+                {
+                    this.Llama.RemoveKnowledgeBySource(entry);
+                }
+            }
+        }
+
+        private void toolStripTextBox_removeKeyword_KeyDown(object sender, KeyEventArgs e)
+        {
+            // Enter to confirm removal of entries containing the keyword
+            if (e.KeyCode == Keys.Enter)
+            {
+                string keyword = this.toolStripTextBox_removeKeyword.Text.Trim();
+                if (!string.IsNullOrEmpty(keyword))
+                {
+                    this.Llama.RemoveKnowledgeByKeyword(keyword);
+                    this.toolStripTextBox_removeKeyword.Clear();
+                }
+            }
+        }
+
+        private void clearAllToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            this.Llama.ClearKnowledgeBase();
+        }
+
+        
     }
 }

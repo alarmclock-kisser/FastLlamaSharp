@@ -28,7 +28,10 @@ namespace FastLlamaSharp.Llama
             var @params = new ModelParams(this.CurrentLoadedModelEntry.ModelFilePath)
             {
                 ContextSize = (uint) contextSize,
-                GpuLayerCount = gpuLayerCount
+                GpuLayerCount = gpuLayerCount,
+                FlashAttention = false,
+                BatchSize = 128,
+                UBatchSize = 128
             };
 
             return this.GetOrCreateLlamaContext(@params, forceRefresh);
@@ -70,7 +73,10 @@ namespace FastLlamaSharp.Llama
                     @params ??= new ModelParams(this.CurrentLoadedModelEntry.ModelFilePath)
                     {
                         ContextSize = 1024,
-                        GpuLayerCount = this._gpuLayerCount
+                        GpuLayerCount = this._gpuLayerCount,
+                        FlashAttention = false,
+                        BatchSize = 128,
+                        UBatchSize = 128
                     };
                     this._llamaContext = this._llamaWeights.CreateContext(@params);
                 }

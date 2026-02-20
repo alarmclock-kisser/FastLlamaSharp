@@ -3,6 +3,8 @@ using LLama;
 using LLama.Common;
 using LLama.Native;
 using LLama.Sampling;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -21,6 +23,50 @@ namespace FastLlamaSharp.Llama
         private ChatSession? _globalSession = null;
 
 
+        private byte[] ResizeImageWithImageSharp(byte[] imageBytes, int maxWidth = 1024)
+        {
+            using (var image = Image.Load(imageBytes))
+            {
+                // Nur resizen, wenn das Bild wirklich größer als maxWidth ist
+                if (image.Width <= maxWidth && image.Height <= maxWidth)
+                {
+                    return imageBytes;
+                }
+
+                // Proportionale Skalierung (Seitenverhältnis bleibt erhalten)
+                image.Mutate(x => x.Resize(new ResizeOptions
+                {
+                    Size = new Size(maxWidth, maxWidth),
+                    Mode = ResizeMode.Max
+                }));
+
+                using (var ms = new MemoryStream())
+                {
+                    image.SaveAsJpeg(ms);
+                    return ms.ToArray();
+                }
+            }
+        }
+
+        private byte[] ResizeImageForStability(byte[] imageBytes)
+        {
+            using (var image = SixLabors.ImageSharp.Image.Load(imageBytes))
+            {
+                // 448 ist der Sweetspot für Qwen-VL/Llava
+                image.Mutate(x => x.Resize(new ResizeOptions
+                {
+                    Size = new SixLabors.ImageSharp.Size(448, 448),
+                    Mode = ResizeMode.Max
+                }));
+                using (var ms = new MemoryStream())
+                {
+                    image.SaveAsJpeg(ms);
+                    return ms.ToArray();
+                }
+            }
+        }
+
+
         /// <summary>
         /// Generates a response from the model based on the provided prompt, optional system prompt, and optional images for multimodal models.
         /// </summary>
@@ -34,6 +80,7 @@ namespace FastLlamaSharp.Llama
             string prompt,
             string? systemPrompt = null,
             string[]? images = null,
+            int imageResizeMaxWidth = 720,
             bool isolated = false,
             int maxTokens = 1024,
             float temperature = 0.7f,
@@ -47,8 +94,7 @@ namespace FastLlamaSharp.Llama
         {
             if (this._llamaContext == null)
             {
-                StaticLogger.Log("Error: LLamaContext is not loaded. Please load a model first.");
-                yield return "Error: Model is not loaded.";
+                await StaticLogger.LogAsync("Error: LLamaContext is not loaded.");
                 yield break;
             }
 
@@ -56,9 +102,9 @@ namespace FastLlamaSharp.Llama
             ChatHistory historyToUse;
             ChatSession sessionToUse;
 
+            // 1. Session & Executor Logik (aus deiner stabilen Version)
             if (isolated)
             {
-                // Isoliert: Cache leeren, neue Session
                 this._llamaContext.NativeHandle.MemoryClear();
                 historyToUse = new ChatHistory();
                 if (!string.IsNullOrWhiteSpace(systemPrompt))
@@ -67,17 +113,12 @@ namespace FastLlamaSharp.Llama
                 }
 
                 var tempExecutor = new InteractiveExecutor(this._llamaContext);
-                sessionToUse = new ChatSession(tempExecutor, historyToUse)
-                                    .WithHistoryTransform(new ChatMlHistoryTransform());
-
-                this._globalExecutor = null;
-                this._globalSession = null;
+                sessionToUse = new ChatSession(tempExecutor, historyToUse).WithHistoryTransform(new ChatMlHistoryTransform());
+                this._globalExecutor = null; this._globalSession = null;
             }
             else
             {
                 historyToUse = this._currentChatHistory;
-
-                // System-Prompt logisch integrieren
                 if (!string.IsNullOrWhiteSpace(systemPrompt))
                 {
                     if (historyToUse.Messages.Count == 0)
@@ -94,66 +135,68 @@ namespace FastLlamaSharp.Llama
                     }
                 }
 
-                // Initialisierung der Session (Falls nicht bereits durch LoadFullSession geladen)
                 if (this._globalExecutor == null || this._globalSession == null)
                 {
-                    // Nur löschen, wenn die Historie leer ist (Neustart ohne geladene Session)
                     if (historyToUse.Messages.Count <= 1)
                     {
-                        StaticLogger.Log("Fresh start: Clearing KV Cache.");
                         this._llamaContext.NativeHandle.MemoryClear();
-                    }
-                    else
-                    {
-                        StaticLogger.Log("Session state detected: Resuming without clearing cache.");
                     }
 
                     this._globalExecutor = new InteractiveExecutor(this._llamaContext);
                     this._globalSession = new ChatSession(this._globalExecutor, historyToUse)
                                             .WithHistoryTransform(new ChatMlHistoryTransform());
                 }
-
                 sessionToUse = this._globalSession;
             }
 
-            // Inferenz-Parameter
-            inferenceParams ??= new InferenceParams
-            {
-                MaxTokens = maxTokens,
-                SamplingPipeline = new DefaultSamplingPipeline
-                {
-                    Temperature = temperature,
-                    TopP = topP,
-                    TopK = topK,
-                    MinP = minP,
-                    RepeatPenalty = repetitionPenalty,
-                    FrequencyPenalty = frequencyPenalty
-                },
-                AntiPrompts = new List<string> { "<|im_end|>", "<|im_start|>", "User:", "user\n" }
-            };
-
-            Stopwatch sw = Stopwatch.StartNew();
-            this.LastGenerationStats = new GenerationStats { TokensGenerated = 0 };
-
-            // MTMD / Vision
+            // 2. Vision / MTMD Block mit ImageSharp Resizing
             if (images != null && images.Length > 0 && this._mtmdWeights != null)
             {
+                // Wir holen den aktuellen Token-Stand als Startpunkt
+                int nPast = this.GetCurrentTokenCount();
+
                 foreach (var imagePath in images)
                 {
-                    if (File.Exists(imagePath))
+                    if (!File.Exists(imagePath))
                     {
-                        byte[] imageBytes = await File.ReadAllBytesAsync(imagePath, cancellationToken);
-                        var embed = this._mtmdWeights.LoadMedia(imageBytes);
-                        int nPast = 0;
-                        this._mtmdWeights.DecodeImageChunk(
-                            this._mtmdWeights.NativeHandle.DangerousGetHandle(),
-                            this._llamaContext.NativeHandle,
-                            embed.DangerousGetHandle(),
-                            ref nPast, 0, (int) this._llamaContext.Params.BatchSize);
+                        continue;
+                    }
+
+                    try
+                    {
+                        await StaticLogger.LogAsync($"Processing Vision: {Path.GetFileName(imagePath)}");
+                        byte[] rawBytes = await File.ReadAllBytesAsync(imagePath, cancellationToken);
+
+                        // Hier nutzen wir ImageSharp für die Optimierung
+                        byte[] processedBytes = this.ResizeImageWithImageSharp(rawBytes, imageResizeMaxWidth);
+
+                        using (var embed = this._mtmdWeights.LoadMedia(processedBytes))
+                        {
+                            // Bild in den KV-Cache dekodieren
+                            this._mtmdWeights.DecodeImageChunk(
+                                this._mtmdWeights.NativeHandle.DangerousGetHandle(),
+                                this._llamaContext.NativeHandle,
+                                embed.DangerousGetHandle(),
+                                ref nPast, 0, (int) this._llamaContext.Params.BatchSize);
+                        }
+                        await StaticLogger.LogAsync($"Image successfully embedded. New context position: {nPast}");
+                    }
+                    catch (Exception ex)
+                    {
+                        await StaticLogger.LogAsync($"Vision Error: {ex.Message}");
                     }
                 }
             }
 
+            // 3. Inferenz & Streaming
+            inferenceParams ??= new InferenceParams
+            {
+                MaxTokens = maxTokens,
+                SamplingPipeline = new DefaultSamplingPipeline { Temperature = temperature, TopP = topP, TopK = topK, MinP = minP, RepeatPenalty = repetitionPenalty, FrequencyPenalty = frequencyPenalty },
+                AntiPrompts = new List<string> { "<|im_end|>", "<|im_start|>", "User:", "user\n" }
+            };
+
+            Stopwatch sw = Stopwatch.StartNew();
             var userMessage = new ChatHistory.Message(AuthorRole.User, prompt);
 
             await foreach (var token in sessionToUse.ChatAsync(userMessage, inferenceParams, cancellationToken))
@@ -167,12 +210,7 @@ namespace FastLlamaSharp.Llama
                 this.LastGenerationStats.TotalGenerationTime = sw.Elapsed;
                 yield return token;
             }
-
             sw.Stop();
-            this.LastGenerationStats.TotalGenerationTime = sw.Elapsed;
         }
-
-
-
     }
 }

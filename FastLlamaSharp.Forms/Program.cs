@@ -16,6 +16,8 @@ namespace FastLlamaSharp.Forms
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
                 .Build();
 
+            var createLogFile = configuration.GetValue<bool>("CreateLogFile");
+            var clearLogs = configuration.GetValue<bool>("ClearLogs");
             var modelDirectories = configuration.GetSection("ModelDirectories").Get<List<string>>();
             var gpuLayerCount = configuration.GetValue<int>("GpuLayerCount");
             var defaultLlamaModel = configuration.GetValue<string>("DefaultLlamaModel");
@@ -25,6 +27,10 @@ namespace FastLlamaSharp.Forms
 
 
             LlamaService llamaService = new(modelDirectories, systemPrompts);
+
+            // Init log files
+            string logDirectory = Path.Combine(llamaService.ContextsDirectory, "..", "Logs");
+            StaticLogger.InitializeLogFiles(logDirectory, createLogFile, clearLogs);
 
             ApplicationConfiguration.Initialize();
             Application.Run(new WindowMain(llamaService, defaultLlamaModel, defaultContextSize, defaultInferenceParameters));

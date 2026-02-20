@@ -28,6 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
+            this.components = new System.ComponentModel.Container();
             this.listBox_log = new ListBox();
             this.comboBox_models = new ComboBox();
             this.button_initialize = new Button();
@@ -68,6 +69,19 @@
             this.label_currentlySavedContextPath = new Label();
             this.checkBox_autoSave = new CheckBox();
             this.label_tokenQuota = new Label();
+            this.numericUpDown_maxWidthPx = new NumericUpDown();
+            this.label_info_maxWidthPx = new Label();
+            this.checkBox_rag = new CheckBox();
+            this.numericUpDown_ragTopK = new NumericUpDown();
+            this.label_info_ragTopK = new Label();
+            this.button_files = new Button();
+            this.listBox_ragEntries = new ListBox();
+            this.contextMenuStrip_rag = new ContextMenuStrip(this.components);
+            this.removeToolStripMenuItem = new ToolStripMenuItem();
+            this.removeKeywordToolStripMenuItem = new ToolStripMenuItem();
+            this.toolStripTextBox_removeKeyword = new ToolStripTextBox();
+            this.clearAllToolStripMenuItem = new ToolStripMenuItem();
+            this.listBox_llamaLog = new ListBox();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_gpuLayerCount).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_contextSize).BeginInit();
             this.groupBox_inferenceParams.SuspendLayout();
@@ -78,6 +92,9 @@
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_temperature).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_repetitionPenalty).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_topP).BeginInit();
+            ((System.ComponentModel.ISupportInitialize) this.numericUpDown_maxWidthPx).BeginInit();
+            ((System.ComponentModel.ISupportInitialize) this.numericUpDown_ragTopK).BeginInit();
+            this.contextMenuStrip_rag.SuspendLayout();
             this.SuspendLayout();
             // 
             // listBox_log
@@ -85,9 +102,9 @@
             this.listBox_log.Font = new Font("Segoe UI", 8.25F, FontStyle.Regular, GraphicsUnit.Point,  0);
             this.listBox_log.FormattingEnabled = true;
             this.listBox_log.HorizontalScrollbar = true;
-            this.listBox_log.Location = new Point(1052, 12);
+            this.listBox_log.Location = new Point(1072, 12);
             this.listBox_log.Name = "listBox_log";
-            this.listBox_log.Size = new Size(360, 277);
+            this.listBox_log.Size = new Size(340, 277);
             this.listBox_log.TabIndex = 0;
             this.listBox_log.DoubleClick += this.listBox_log_DoubleClick;
             // 
@@ -207,13 +224,14 @@
             // 
             // button_images
             // 
-            this.button_images.Location = new Point(654, 619);
+            this.button_images.Location = new Point(654, 573);
             this.button_images.Name = "button_images";
             this.button_images.Size = new Size(85, 23);
             this.button_images.TabIndex = 13;
             this.button_images.Text = "Images";
             this.button_images.UseVisualStyleBackColor = true;
             this.button_images.Click += this.button_images_Click;
+            this.button_images.MouseDown += this.button_images_MouseDown;
             // 
             // label_attachedImages
             // 
@@ -403,7 +421,7 @@
             // 
             // button_newContext
             // 
-            this.button_newContext.Location = new Point(654, 512);
+            this.button_newContext.Location = new Point(12, 378);
             this.button_newContext.Name = "button_newContext";
             this.button_newContext.Size = new Size(85, 23);
             this.button_newContext.TabIndex = 17;
@@ -413,7 +431,7 @@
             // 
             // button_saveContext
             // 
-            this.button_saveContext.Location = new Point(654, 541);
+            this.button_saveContext.Location = new Point(12, 407);
             this.button_saveContext.Name = "button_saveContext";
             this.button_saveContext.Size = new Size(85, 23);
             this.button_saveContext.TabIndex = 18;
@@ -425,7 +443,7 @@
             // 
             this.richTextBox_conversation.Location = new Point(108, 74);
             this.richTextBox_conversation.Name = "richTextBox_conversation";
-            this.richTextBox_conversation.Size = new Size(540, 461);
+            this.richTextBox_conversation.Size = new Size(540, 446);
             this.richTextBox_conversation.TabIndex = 19;
             this.richTextBox_conversation.Text = "";
             // 
@@ -449,7 +467,7 @@
             // 
             // button_loadContext
             // 
-            this.button_loadContext.Location = new Point(654, 570);
+            this.button_loadContext.Location = new Point(12, 436);
             this.button_loadContext.Name = "button_loadContext";
             this.button_loadContext.Size = new Size(85, 23);
             this.button_loadContext.TabIndex = 22;
@@ -471,7 +489,7 @@
             this.checkBox_autoSave.AutoSize = true;
             this.checkBox_autoSave.Checked = true;
             this.checkBox_autoSave.CheckState = CheckState.Checked;
-            this.checkBox_autoSave.Location = new Point(567, 544);
+            this.checkBox_autoSave.Location = new Point(567, 49);
             this.checkBox_autoSave.Name = "checkBox_autoSave";
             this.checkBox_autoSave.RightToLeft = RightToLeft.Yes;
             this.checkBox_autoSave.Size = new Size(81, 19);
@@ -488,11 +506,138 @@
             this.label_tokenQuota.TabIndex = 32;
             this.label_tokenQuota.Text = "(0 / - Tokens)";
             // 
+            // numericUpDown_maxWidthPx
+            // 
+            this.numericUpDown_maxWidthPx.Increment = new decimal(new int[] { 16, 0, 0, 0 });
+            this.numericUpDown_maxWidthPx.Location = new Point(654, 617);
+            this.numericUpDown_maxWidthPx.Maximum = new decimal(new int[] { 2048, 0, 0, 0 });
+            this.numericUpDown_maxWidthPx.Minimum = new decimal(new int[] { 64, 0, 0, 0 });
+            this.numericUpDown_maxWidthPx.Name = "numericUpDown_maxWidthPx";
+            this.numericUpDown_maxWidthPx.Size = new Size(85, 23);
+            this.numericUpDown_maxWidthPx.TabIndex = 33;
+            this.numericUpDown_maxWidthPx.Value = new decimal(new int[] { 720, 0, 0, 0 });
+            // 
+            // label_info_maxWidthPx
+            // 
+            this.label_info_maxWidthPx.AutoSize = true;
+            this.label_info_maxWidthPx.Location = new Point(654, 599);
+            this.label_info_maxWidthPx.Name = "label_info_maxWidthPx";
+            this.label_info_maxWidthPx.Size = new Size(80, 15);
+            this.label_info_maxWidthPx.TabIndex = 34;
+            this.label_info_maxWidthPx.Text = "Max. width px";
+            // 
+            // checkBox_rag
+            // 
+            this.checkBox_rag.AutoSize = true;
+            this.checkBox_rag.Checked = true;
+            this.checkBox_rag.CheckState = CheckState.Checked;
+            this.checkBox_rag.Location = new Point(654, 411);
+            this.checkBox_rag.Name = "checkBox_rag";
+            this.checkBox_rag.RightToLeft = RightToLeft.Yes;
+            this.checkBox_rag.Size = new Size(85, 19);
+            this.checkBox_rag.TabIndex = 35;
+            this.checkBox_rag.Text = "Knowledge";
+            this.checkBox_rag.UseVisualStyleBackColor = true;
+            this.checkBox_rag.CheckedChanged += this.checkBox_rag_CheckedChanged;
+            // 
+            // numericUpDown_ragTopK
+            // 
+            this.numericUpDown_ragTopK.Location = new Point(694, 453);
+            this.numericUpDown_ragTopK.Maximum = new decimal(new int[] { 99, 0, 0, 0 });
+            this.numericUpDown_ragTopK.Name = "numericUpDown_ragTopK";
+            this.numericUpDown_ragTopK.Size = new Size(45, 23);
+            this.numericUpDown_ragTopK.TabIndex = 36;
+            this.numericUpDown_ragTopK.Value = new decimal(new int[] { 3, 0, 0, 0 });
+            // 
+            // label_info_ragTopK
+            // 
+            this.label_info_ragTopK.AutoSize = true;
+            this.label_info_ragTopK.Location = new Point(697, 435);
+            this.label_info_ragTopK.Name = "label_info_ragTopK";
+            this.label_info_ragTopK.Size = new Size(37, 15);
+            this.label_info_ragTopK.TabIndex = 31;
+            this.label_info_ragTopK.Text = "Top K";
+            // 
+            // button_files
+            // 
+            this.button_files.Location = new Point(654, 382);
+            this.button_files.Name = "button_files";
+            this.button_files.Size = new Size(85, 23);
+            this.button_files.TabIndex = 37;
+            this.button_files.Text = "Files";
+            this.button_files.UseVisualStyleBackColor = true;
+            this.button_files.Click += this.button_files_Click;
+            // 
+            // listBox_ragEntries
+            // 
+            this.listBox_ragEntries.ContextMenuStrip = this.contextMenuStrip_rag;
+            this.listBox_ragEntries.FormattingEnabled = true;
+            this.listBox_ragEntries.HorizontalScrollbar = true;
+            this.listBox_ragEntries.Location = new Point(745, 382);
+            this.listBox_ragEntries.Name = "listBox_ragEntries";
+            this.listBox_ragEntries.Size = new Size(309, 124);
+            this.listBox_ragEntries.TabIndex = 38;
+            this.listBox_ragEntries.MouseDown += this.listBox_ragEntries_MouseDown;
+            // 
+            // contextMenuStrip_rag
+            // 
+            this.contextMenuStrip_rag.Items.AddRange(new ToolStripItem[] { this.removeToolStripMenuItem, this.removeKeywordToolStripMenuItem, this.clearAllToolStripMenuItem });
+            this.contextMenuStrip_rag.Name = "contextMenuStrip_rag";
+            this.contextMenuStrip_rag.Size = new Size(175, 70);
+            this.contextMenuStrip_rag.Text = "RAG Files";
+            // 
+            // removeToolStripMenuItem
+            // 
+            this.removeToolStripMenuItem.Name = "removeToolStripMenuItem";
+            this.removeToolStripMenuItem.Size = new Size(174, 22);
+            this.removeToolStripMenuItem.Text = "Remove";
+            this.removeToolStripMenuItem.Click += this.removeToolStripMenuItem_Click;
+            // 
+            // removeKeywordToolStripMenuItem
+            // 
+            this.removeKeywordToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { this.toolStripTextBox_removeKeyword });
+            this.removeKeywordToolStripMenuItem.Name = "removeKeywordToolStripMenuItem";
+            this.removeKeywordToolStripMenuItem.Size = new Size(174, 22);
+            this.removeKeywordToolStripMenuItem.Text = "Remove keyword...";
+            // 
+            // toolStripTextBox_removeKeyword
+            // 
+            this.toolStripTextBox_removeKeyword.Name = "toolStripTextBox_removeKeyword";
+            this.toolStripTextBox_removeKeyword.Size = new Size(100, 23);
+            this.toolStripTextBox_removeKeyword.KeyDown += this.toolStripTextBox_removeKeyword_KeyDown;
+            // 
+            // clearAllToolStripMenuItem
+            // 
+            this.clearAllToolStripMenuItem.ForeColor = Color.Firebrick;
+            this.clearAllToolStripMenuItem.Name = "clearAllToolStripMenuItem";
+            this.clearAllToolStripMenuItem.Size = new Size(174, 22);
+            this.clearAllToolStripMenuItem.Text = "Clear All";
+            this.clearAllToolStripMenuItem.Click += this.clearAllToolStripMenuItem_Click;
+            // 
+            // listBox_llamaLog
+            // 
+            this.listBox_llamaLog.Font = new Font("Segoe UI", 8.25F, FontStyle.Regular, GraphicsUnit.Point,  0);
+            this.listBox_llamaLog.FormattingEnabled = true;
+            this.listBox_llamaLog.HorizontalScrollbar = true;
+            this.listBox_llamaLog.Location = new Point(1072, 295);
+            this.listBox_llamaLog.Name = "listBox_llamaLog";
+            this.listBox_llamaLog.Size = new Size(340, 212);
+            this.listBox_llamaLog.TabIndex = 39;
+            this.listBox_llamaLog.DoubleClick += this.listBox_llamaLog_DoubleClick;
+            // 
             // WindowMain
             // 
             this.AutoScaleDimensions = new SizeF(7F, 15F);
             this.AutoScaleMode = AutoScaleMode.Font;
             this.ClientSize = new Size(1424, 681);
+            this.Controls.Add(this.listBox_llamaLog);
+            this.Controls.Add(this.listBox_ragEntries);
+            this.Controls.Add(this.button_files);
+            this.Controls.Add(this.label_info_ragTopK);
+            this.Controls.Add(this.numericUpDown_ragTopK);
+            this.Controls.Add(this.checkBox_rag);
+            this.Controls.Add(this.label_info_maxWidthPx);
+            this.Controls.Add(this.numericUpDown_maxWidthPx);
             this.Controls.Add(this.label_tokenQuota);
             this.Controls.Add(this.checkBox_autoSave);
             this.Controls.Add(this.label_currentlySavedContextPath);
@@ -532,6 +677,9 @@
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_temperature).EndInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_repetitionPenalty).EndInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_topP).EndInit();
+            ((System.ComponentModel.ISupportInitialize) this.numericUpDown_maxWidthPx).EndInit();
+            ((System.ComponentModel.ISupportInitialize) this.numericUpDown_ragTopK).EndInit();
+            this.contextMenuStrip_rag.ResumeLayout(false);
             this.ResumeLayout(false);
             this.PerformLayout();
         }
@@ -578,5 +726,18 @@
         private Label label_currentlySavedContextPath;
         private CheckBox checkBox_autoSave;
         private Label label_tokenQuota;
+        private NumericUpDown numericUpDown_maxWidthPx;
+        private Label label_info_maxWidthPx;
+        private CheckBox checkBox_rag;
+        private NumericUpDown numericUpDown_ragTopK;
+        private Label label_info_ragTopK;
+        private Button button_files;
+        private ListBox listBox_ragEntries;
+        private ContextMenuStrip contextMenuStrip_rag;
+        private ToolStripMenuItem removeToolStripMenuItem;
+        private ToolStripMenuItem removeKeywordToolStripMenuItem;
+        private ToolStripTextBox toolStripTextBox_removeKeyword;
+        private ToolStripMenuItem clearAllToolStripMenuItem;
+        private ListBox listBox_llamaLog;
     }
 }
