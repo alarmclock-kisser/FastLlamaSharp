@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="FastLlamaSharp.Forms/FastLlamaSharp.Forms.csproj" />
+  <Project Path="FastLlamaSharp.Llama/FastLlamaSharp.Llama.csproj" />
+  <Project Path="FastLlamaSharp.Onnx/FastLlamaSharp.Onnx.csproj" />
+  <Project Path="FastLlamaSharp.Shared/FastLlamaSharp.Shared.csproj" />
+</Solution>
