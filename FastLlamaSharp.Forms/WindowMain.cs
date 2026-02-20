@@ -13,6 +13,7 @@ namespace FastLlamaSharp.Forms
 
         internal readonly DefaultInferenceParameters DefaultInferenceParameters;
 
+        private CancellationTokenSource? _modelLoadingCts = null;
         private CancellationTokenSource? _generationCts = null;
         private DateTime? _generationStarted = null;
         private Timer? _generationTimer = null;
@@ -60,12 +61,12 @@ namespace FastLlamaSharp.Forms
                 if (this.InvokeRequired)
                 {
                     this.Invoke(new Action(() => this.listBox_log.TopIndex = this.listBox_log.Items.Count - 1));
-                    this.Invoke(new Action(() => this.listBox_llamaLog.TopIndex = this.listBox_llamaLog.Items.Count - 1));
+                    // this.Invoke(new Action(() => this.listBox_llamaLog.TopIndex = this.listBox_llamaLog.Items.Count - 1));
                 }
                 else
                 {
                     this.listBox_log.TopIndex = this.listBox_log.Items.Count - 1;
-                    this.listBox_llamaLog.TopIndex = this.listBox_llamaLog.Items.Count - 1;
+                    // this.listBox_llamaLog.TopIndex = this.listBox_llamaLog.Items.Count - 1;
                 }
             };
 
@@ -159,24 +160,144 @@ namespace FastLlamaSharp.Forms
             // RichTextBox vorher leeren, da wir sie komplett neu aufbauen
             this.richTextBox_conversation.Clear();
 
+            string[] tags = { "<think>", "</think>", "**", "__", "~~", "*", "_", "~", "<|im_start|>", "<|im_end|>" };
+            float normalSize = this.richTextBox_conversation.Font.Size;
+            float thinkSize = Math.Max(normalSize - 2f, 7f);
+            string fontFamily = this.richTextBox_conversation.Font.FontFamily.Name;
+
             foreach (var msg in history.Messages)
             {
-                // 1. Cursor ans Ende setzen, um das Alignment für den nächsten Block festzulegen
+                if (string.IsNullOrEmpty(msg.Content))
+                {
+                    continue;
+                }
+
+                // 1. Cursor ans Ende setzen, um das Alignment festzulegen
                 this.richTextBox_conversation.SelectionStart = this.richTextBox_conversation.TextLength;
                 this.richTextBox_conversation.SelectionLength = 0;
 
-                // 2. Alignment bestimmen (User = Rechts, alles andere (System/Assistant) = Links)
+                // 2. Alignment und Rollen-Prefix bestimmen
                 bool isUser = msg.Role.Equals("User", StringComparison.OrdinalIgnoreCase);
                 this.richTextBox_conversation.SelectionAlignment = isUser ? HorizontalAlignment.Right : HorizontalAlignment.Left;
 
-                // Optional: Du kannst hier sogar die Farben ändern!
-                this.richTextBox_conversation.SelectionColor = isUser ? Color.Blue : Color.Black;
+                // Rollen-Name (User/Assistant) fett drucken
+                this.richTextBox_conversation.SelectionColor = isUser ? this.UserMessageColor : this.AssistantMessageColor;
+                this.richTextBox_conversation.SelectionFont = new Font(fontFamily, normalSize, FontStyle.Bold);
+                this.richTextBox_conversation.AppendText($"{msg.Role}: ");
 
-                // 3. Text plus doppeltem Zeilenumbruch (für die freie Zeile) anfügen
-                this.richTextBox_conversation.AppendText($"{msg.Role}: {msg.Content}{Environment.NewLine}{Environment.NewLine}");
+                // 3. Status-Variablen für das Parsing des Inhalts
+                bool isThinking = false;
+                bool isBold = false;
+                bool isItalic = false;
+                bool isStrike = false;
+
+                // Hilfsfunktion zum formatierten Schreiben
+                Action<string> appendFormatted = (textToPrint) =>
+                {
+                    if (string.IsNullOrEmpty(textToPrint))
+                    {
+                        return;
+                    }
+
+                    this.richTextBox_conversation.SelectionStart = this.richTextBox_conversation.TextLength;
+                    this.richTextBox_conversation.SelectionLength = 0;
+
+                    FontStyle currentStyle = FontStyle.Regular;
+                    if (isThinking)
+                    {
+                        currentStyle |= FontStyle.Italic;
+                    }
+
+                    if (isBold)
+                    {
+                        currentStyle |= FontStyle.Bold;
+                    }
+
+                    if (isItalic)
+                    {
+                        currentStyle |= FontStyle.Italic;
+                    }
+
+                    if (isStrike)
+                    {
+                        currentStyle |= FontStyle.Strikeout;
+                    }
+
+                    this.richTextBox_conversation.SelectionFont = new Font(fontFamily, isThinking ? thinkSize : normalSize, currentStyle);
+                    this.richTextBox_conversation.SelectionColor = isThinking ? Color.Gray : (isUser ? this.UserMessageColor : this.AssistantMessageColor);
+                    this.richTextBox_conversation.AppendText(textToPrint);
+                };
+
+                // 4. Den kompletten Nachrichten-Inhalt parsen
+                string bufferStr = msg.Content;
+
+                while (bufferStr.Length > 0)
+                {
+                    int nextTagIndex = bufferStr.Length;
+                    string foundTag = "";
+
+                    // Finde das nächste Vorkommen eines bekannten Tags
+                    foreach (var tag in tags)
+                    {
+                        int idx = bufferStr.IndexOf(tag);
+                        if (idx != -1)
+                        {
+                            // Schutz vor Aufzählungszeichen (Bullet Points): "* Item" ist NICHT kursiv!
+                            if ((tag == "*" || tag == "_") && idx + tag.Length < bufferStr.Length && char.IsWhiteSpace(bufferStr[idx + tag.Length]))
+                            {
+                                continue;
+                            }
+
+                            if (idx < nextTagIndex)
+                            {
+                                nextTagIndex = idx;
+                                foundTag = tag;
+                            }
+                        }
+                    }
+
+                    if (nextTagIndex == bufferStr.Length)
+                    {
+                        // Kein Tag mehr gefunden -> den restlichen Text drucken
+                        appendFormatted(bufferStr);
+                        bufferStr = "";
+                    }
+                    else
+                    {
+                        // Text VOR dem gefundenen Tag drucken
+                        if (nextTagIndex > 0)
+                        {
+                            appendFormatted(bufferStr.Substring(0, nextTagIndex));
+                        }
+
+                        // State toggeln (Tag anwenden)
+                        if (foundTag == "<think>") { isThinking = true; appendFormatted("\n\n[ Thinking Process Started... ]\n"); }
+                        else if (foundTag == "</think>") { isThinking = false; appendFormatted("\n[ Thinking Process Finished ]\n\n"); }
+                        else if (foundTag == "**" || foundTag == "__")
+                        {
+                            isBold = !isBold;
+                        }
+                        else if (foundTag == "*" || foundTag == "_")
+                        {
+                            isItalic = !isItalic;
+                        }
+                        else if (foundTag == "~~" || foundTag == "~")
+                        {
+                            isStrike = !isStrike;
+                        }
+                        // <|im_start|> und <|im_end|> bewirken nichts, sie werden einfach geschluckt
+
+                        // Tag aus dem Buffer entfernen, um mit dem Rest weiterzumachen
+                        bufferStr = bufferStr.Substring(nextTagIndex + foundTag.Length);
+                    }
+                }
+
+                // 5. Nachricht mit Zeilenumbrüchen abschließen
+                this.richTextBox_conversation.SelectionFont = new Font(fontFamily, normalSize, FontStyle.Regular);
+                this.richTextBox_conversation.AppendText($"{Environment.NewLine}{Environment.NewLine}");
             }
 
-            // 4. Nach ganz unten scrollen, falls gewünscht
+            // 6. Nach ganz unten scrollen, falls gewünscht
             if (scrollToBottom)
             {
                 this.richTextBox_conversation.SelectionStart = this.richTextBox_conversation.TextLength;
@@ -186,6 +307,25 @@ namespace FastLlamaSharp.Forms
 
         private void Ui_UpdateState()
         {
+            if (this.IsDisposed || !this.IsHandleCreated)
+            {
+                return; // Form ist bereits weg
+            }
+
+            if (this.InvokeRequired)
+            {
+                try
+                {
+                    // BeginInvoke wirft seltener bei Disposal; try/catch defensiv
+                    this.BeginInvoke(new Action(this.Ui_UpdateState));
+                }
+                catch (ObjectDisposedException)
+                {
+                    // ignorieren
+                }
+                return;
+            }
+
             if (this.Llama.CurrentLoadedModelEntry != null)
             {
                 int tokenCount = this.Llama.GetCurrentTokenCount();
@@ -282,8 +422,11 @@ namespace FastLlamaSharp.Forms
 
 
         // Init / Dispose model
-        private void button_initialize_Click(object sender, EventArgs e)
+        private async void button_initialize_Click(object? sender, EventArgs e)
         {
+            Cursor cursor = this.Cursor;
+            this.Invoke(() => this.Cursor = Cursors.WaitCursor);
+
             if (this.Llama.CurrentLoadedModelEntry != null)
             {
                 // Dispose (unload)
@@ -292,23 +435,30 @@ namespace FastLlamaSharp.Forms
                     bool success = this.Llama.UnloadModel();
                     if (!success)
                     {
-                        StaticLogger.Log("Failed to unload model.");
+                        await StaticLogger.LogAsync("Failed to unload model.");
                     }
                     else
                     {
-                        this.comboBox_models.Enabled = true;
-                        this.numericUpDown_gpuLayerCount.Enabled = true;
-                        this.numericUpDown_contextSize.Enabled = true;
-                        this.checkBox_tryLoadMmproj.Enabled = true;
-                        this.checkBox_warmupMmproj.Enabled = true;
-                        this.button_initialize.Text = "Initialize";
-                        this.button_initialize.BackColor = SystemColors.Control;
-                        StaticLogger.Log("Model unloaded.");
+                        this.Invoke(() =>
+                        {
+                            this.comboBox_models.Enabled = true;
+                            this.numericUpDown_gpuLayerCount.Enabled = true;
+                            this.numericUpDown_contextSize.Enabled = true;
+                            this.checkBox_tryLoadMmproj.Enabled = true;
+                            this.checkBox_warmupMmproj.Enabled = true;
+                            this.button_initialize.Text = "Initialize";
+                            this.button_initialize.BackColor = SystemColors.Control;
+                        });
+                        await StaticLogger.LogAsync("Model unloaded.");
                     }
                 }
                 catch (Exception ex)
                 {
-                    StaticLogger.Log($"Error disposing model: {ex.Message}");
+                    await StaticLogger.LogAsync($"Error disposing model: {ex.Message}");
+                }
+                finally
+                {
+                    this.Cursor = cursor;
                 }
             }
             else
@@ -318,32 +468,67 @@ namespace FastLlamaSharp.Forms
                 {
                     try
                     {
+                        this.Invoke(new Action(() => this.progressBar_modelLoading.Value = 0));
+                        this.Invoke(new Action(() => this.progressBar_modelLoading.Visible = true));
+                        this._modelLoadingCts = new CancellationTokenSource();
+                        var progress = new Progress<float>(value => this.Invoke(new Action(() => this.progressBar_modelLoading.Value = Math.Clamp((int) (value * this.progressBar_modelLoading.Maximum), 0, this.progressBar_modelLoading.Maximum))));
+                        this.button_initialize.Text = "Abort";
+                        this.button_initialize.Click -= this.button_initialize_Click;
+                        this.button_initialize.Click += this.button_cancelLoading_Click;
+
                         var req = new LlamaModelLoadRequest(selectedModel.RootDirectory, (int) this.numericUpDown_gpuLayerCount.Value, (int) this.numericUpDown_contextSize.Value, this.checkBox_tryLoadMmproj.Checked, this.checkBox_warmupMmproj.Checked);
-                        bool success = this.Llama.LoadModel(req);
+                        bool success = await this.Llama.LoadModelAsync(req, progress, this._modelLoadingCts.Token).ConfigureAwait(false);
                         if (!success)
                         {
-                            StaticLogger.Log("Failed to load model.");
+                            await StaticLogger.LogAsync("Failed to load model.");
                         }
                         else
                         {
-                            this.comboBox_models.Enabled = false;
-                            this.numericUpDown_gpuLayerCount.Enabled = false;
-                            this.numericUpDown_contextSize.Enabled = false;
-                            this.checkBox_tryLoadMmproj.Enabled = false;
-                            this.checkBox_warmupMmproj.Enabled = false;
-                            this.button_initialize.Text = "Unload";
-                            this.button_initialize.BackColor = Color.LightCoral;
-                            StaticLogger.Log($"Model loaded: {selectedModel.DisplayName}");
+                            this.Invoke(new Action(() =>
+                            {
+                                this.comboBox_models.Enabled = false;
+                                this.numericUpDown_gpuLayerCount.Enabled = false;
+                                this.numericUpDown_contextSize.Enabled = false;
+                                this.checkBox_tryLoadMmproj.Enabled = false;
+                                this.checkBox_warmupMmproj.Enabled = false;
+                                this.button_initialize.Text = "Unload";
+                                this.button_initialize.BackColor = Color.LightCoral;
+                            }));
+                            await StaticLogger.LogAsync($"Model loaded: {selectedModel.DisplayName}");
                         }
                     }
                     catch (Exception ex)
                     {
-                        StaticLogger.Log($"Error initializing model: {ex.Message}");
+                        await StaticLogger.LogAsync($"Error initializing model: {ex.Message}");
+                    }
+                    finally
+                    {
+                        this.Invoke(new Action(() =>
+                        {
+                            this.progressBar_modelLoading.Value = 0;
+                            this.progressBar_modelLoading.Visible = false;
+                            this.Cursor = cursor;
+                        }));
+
+                        this.button_initialize.Click -= this.button_cancelLoading_Click;
+                        this.button_initialize.Click += this.button_initialize_Click;
                     }
                 }
             }
 
             this.Ui_UpdateState();
+        }
+
+        private void button_cancelLoading_Click(object? sender, EventArgs e)
+        {
+            if (this._modelLoadingCts != null && !this._modelLoadingCts.IsCancellationRequested)
+            {
+                this._modelLoadingCts.Cancel();
+                this.button_initialize.Text = "Initialize";
+                this.button_initialize.Click -= this.button_cancelLoading_Click;
+                this.button_initialize.Click += this.button_initialize_Click;
+                StaticLogger.Log("Model loading cancellation requested.");
+            }
         }
 
         private void checkBox_tryLoadMmproj_CheckedChanged(object sender, EventArgs e)
@@ -486,19 +671,17 @@ namespace FastLlamaSharp.Forms
 
                 int currentLine = this.richTextBox_conversation.GetLineFromCharIndex(this.richTextBox_conversation.TextLength);
 
-                // --- STREAMING MARKDOWN & THINK PARSER ---
                 bool isThinking = false;
                 bool isBold = false;
                 bool isItalic = false;
                 bool isStrike = false;
 
                 float normalSize = this.richTextBox_conversation.Font.Size;
-                float thinkSize = Math.Max(normalSize - 2f, 7f); // Kleinere Schriftart für <think>
+                float thinkSize = Math.Max(normalSize - 1f, 7f);
                 string fontFamily = this.richTextBox_conversation.Font.FontFamily.Name;
 
                 StringBuilder tokenBuffer = new StringBuilder();
 
-                // Lokale Hilfsfunktion zum sauberen Schreiben mit aktuellem Style
                 Action<string> appendFormatted = (textToPrint) =>
                 {
                     if (string.IsNullOrEmpty(textToPrint))
@@ -535,24 +718,39 @@ namespace FastLlamaSharp.Forms
                     this.richTextBox_conversation.AppendText(textToPrint);
                 };
 
-                string[] tags = { "<think>", "</think>", "**", "__", "~~", "*", "_", "~" };
+                // Alle Tags, die das System verarbeiten/verschlucken soll
+                string[] tags = { "<think>", "</think>", "**", "__", "~~", "*", "_", "~", "<|im_start|>", "<|im_end|>" };
 
                 await foreach (var textToken in responseStream)
                 {
-                    // Unsichtbare System-Tokens direkt rausfiltern
-                    string safeToken = textToken.Replace("<|im_end|>", "").Replace("<|im_start|>", "");
-                    tokenBuffer.Append(safeToken);
+                    tokenBuffer.Append(textToken);
                     string bufferStr = tokenBuffer.ToString();
 
-                    // Warten, wenn der Puffer mitten in einem Tag enden könnte (z.B. "<thi" oder "*")
-                    if (bufferStr.EndsWith("<") || bufferStr.EndsWith("<t") || bufferStr.EndsWith("<th") || bufferStr.EndsWith("<thi") || bufferStr.EndsWith("<thin") || bufferStr.EndsWith("<think") ||
-                        bufferStr.EndsWith("</") || bufferStr.EndsWith("</t") || bufferStr.EndsWith("</th") || bufferStr.EndsWith("</thi") || bufferStr.EndsWith("</thin") || bufferStr.EndsWith("</think") ||
-                        bufferStr.EndsWith("*") || bufferStr.EndsWith("_") || bufferStr.EndsWith("~"))
+                    // 1. CLEVERE WARTE-LOGIK: Endet der Puffer mit dem *Anfang* eines beliebigen Tags?
+                    bool waitingForTag = false;
+                    foreach (var tag in tags)
                     {
-                        continue; // Wir warten auf das nächste Token vom Stream
+                        // Prüfen, ob das Ende des Puffers ein unvollständiges Tag ist (z.B. "<|im_")
+                        for (int i = 1; i < tag.Length; i++)
+                        {
+                            if (bufferStr.EndsWith(tag.Substring(0, i)))
+                            {
+                                waitingForTag = true;
+                                break;
+                            }
+                        }
+                        if (waitingForTag)
+                        {
+                            break;
+                        }
                     }
 
-                    // Puffer verarbeiten
+                    if (waitingForTag)
+                    {
+                        continue; // Warten auf das nächste Stück vom Stream...
+                    }
+
+                    // 2. PUFFER VERARBEITEN
                     while (bufferStr.Length > 0)
                     {
                         int nextTagIndex = bufferStr.Length;
@@ -563,7 +761,7 @@ namespace FastLlamaSharp.Forms
                             int idx = bufferStr.IndexOf(tag);
                             if (idx != -1)
                             {
-                                // Schutz vor Aufzählungszeichen (Bullet Points): "* Item" ist NICHT kursiv!
+                                // Schutz vor Listen-Punkten: "* Punkt" ist nicht kursiv
                                 if ((tag == "*" || tag == "_") && idx + tag.Length < bufferStr.Length && char.IsWhiteSpace(bufferStr[idx + tag.Length]))
                                 {
                                     continue;
@@ -579,19 +777,17 @@ namespace FastLlamaSharp.Forms
 
                         if (nextTagIndex == bufferStr.Length)
                         {
-                            // Kein Tag gefunden -> Alles drucken
                             appendFormatted(bufferStr);
                             bufferStr = "";
                         }
                         else
                         {
-                            // Text VOR dem Tag drucken
                             if (nextTagIndex > 0)
                             {
                                 appendFormatted(bufferStr.Substring(0, nextTagIndex));
                             }
 
-                            // State toggeln (Tag anwenden)
+                            // Tag auswerten (ChatML wird hier lautlos verschluckt)
                             if (foundTag == "<think>") { isThinking = true; appendFormatted("\n\n[ Thinking Process Started... ]\n"); }
                             else if (foundTag == "</think>") { isThinking = false; appendFormatted("\n[ Thinking Process Finished ]\n\n"); }
                             else if (foundTag == "**" || foundTag == "__")
@@ -606,15 +802,14 @@ namespace FastLlamaSharp.Forms
                             {
                                 isStrike = !isStrike;
                             }
+                            // <|im_start|> und <|im_end|> werden einfach ignoriert!
 
-                            // Tag aus Puffer entfernen
                             bufferStr = bufferStr.Substring(nextTagIndex + foundTag.Length);
                         }
                     }
 
                     tokenBuffer.Clear();
 
-                    // Auto-Scroll Logik
                     int newLine = this.richTextBox_conversation.GetLineFromCharIndex(this.richTextBox_conversation.TextLength);
                     if (newLine > currentLine)
                     {
@@ -623,18 +818,16 @@ namespace FastLlamaSharp.Forms
                     }
                 }
 
-                // Falls am Ende noch Reste im Puffer sind
                 if (tokenBuffer.Length > 0)
                 {
                     appendFormatted(tokenBuffer.ToString());
                 }
 
-                // Reset für nächste Nachricht
                 this.richTextBox_conversation.SelectionFont = new Font(this.richTextBox_conversation.Font, FontStyle.Regular);
                 this.richTextBox_conversation.AppendText($"{Environment.NewLine}{Environment.NewLine}");
                 this.richTextBox_conversation.ScrollToCaret();
 
-                await StaticLogger.LogAsync("Generation finished.");
+                await StaticLogger.LogAsync("Generation finished. (" + (this.Llama.LastGenerationStats.TotalGenerationTime.TotalSeconds < 10 ? this.Llama.LastGenerationStats.TotalGenerationTime.TotalMilliseconds.ToString("N0") + "ms" : this.Llama.LastGenerationStats.TotalGenerationTime.ToString(@"mm\:ss") + ")"));
             }
             catch (OperationCanceledException)
             {
@@ -950,6 +1143,60 @@ namespace FastLlamaSharp.Forms
             this.Llama.ClearKnowledgeBase();
         }
 
-        
+
+
+        // Conversation UI settings
+        private void richTextBox_conversation_MouseDown(object sender, MouseEventArgs e)
+        {
+            // If right-clicked, open context menu strip
+            if (e.Button == MouseButtons.Right)
+            {
+                this.contextMenuStrip_conversation.Show(this.richTextBox_conversation, e.Location);
+            }
+        }
+
+        private void setUserColorToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            // ColorDialog to set user message color
+            ColorDialog cd = new()
+            {
+                AllowFullOpen = true,
+                AnyColor = true,
+                Color = this.UserMessageColor,
+                FullOpen = true
+            };
+
+            if (cd.ShowDialog() == DialogResult.OK)
+            {
+                this.UserMessageColor = cd.Color;
+                StaticLogger.Log($"User message color set to: {cd.Color}");
+                this.TextBox_LoadConversationHistory();
+            }
+        }
+
+        private void setAssistantColorToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            // ColorDialog to set assistant message color
+            ColorDialog cd = new()
+            {
+                AllowFullOpen = true,
+                AnyColor = true,
+                Color = this.AssistantMessageColor,
+                FullOpen = true
+            };
+
+            if (cd.ShowDialog() == DialogResult.OK)
+            {
+                this.AssistantMessageColor = cd.Color;
+                StaticLogger.Log($"Assistant message color set to: {cd.Color}");
+                this.TextBox_LoadConversationHistory();
+            }
+        }
+
+        private void toolStripComboBox_fontSize_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            this.richTextBox_conversation.Font = new Font(this.richTextBox_conversation.Font.FontFamily, (float) (this.toolStripComboBox_fontSize.SelectedItem ?? 9f), this.richTextBox_conversation.Font.Style);
+            this.TextBox_LoadConversationHistory();
+        }
     }
 }

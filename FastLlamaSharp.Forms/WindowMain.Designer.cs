@@ -63,6 +63,11 @@
             this.button_newContext = new Button();
             this.button_saveContext = new Button();
             this.richTextBox_conversation = new RichTextBox();
+            this.contextMenuStrip_conversation = new ContextMenuStrip(this.components);
+            this.setUserColorToolStripMenuItem = new ToolStripMenuItem();
+            this.setAssistantColorToolStripMenuItem = new ToolStripMenuItem();
+            this.fontSizeToolStripMenuItem = new ToolStripMenuItem();
+            this.toolStripComboBox_fontSize = new ToolStripComboBox();
             this.label_tokensGenerated = new Label();
             this.label_tokenRate = new Label();
             this.button_loadContext = new Button();
@@ -82,6 +87,7 @@
             this.toolStripTextBox_removeKeyword = new ToolStripTextBox();
             this.clearAllToolStripMenuItem = new ToolStripMenuItem();
             this.listBox_llamaLog = new ListBox();
+            this.progressBar_modelLoading = new ProgressBar();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_gpuLayerCount).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_contextSize).BeginInit();
             this.groupBox_inferenceParams.SuspendLayout();
@@ -92,6 +98,7 @@
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_temperature).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_repetitionPenalty).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_topP).BeginInit();
+            this.contextMenuStrip_conversation.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_maxWidthPx).BeginInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_ragTopK).BeginInit();
             this.contextMenuStrip_rag.SuspendLayout();
@@ -441,11 +448,49 @@
             // 
             // richTextBox_conversation
             // 
+            this.richTextBox_conversation.ContextMenuStrip = this.contextMenuStrip_conversation;
             this.richTextBox_conversation.Location = new Point(108, 74);
             this.richTextBox_conversation.Name = "richTextBox_conversation";
             this.richTextBox_conversation.Size = new Size(540, 446);
             this.richTextBox_conversation.TabIndex = 19;
             this.richTextBox_conversation.Text = "";
+            this.richTextBox_conversation.MouseDown += this.richTextBox_conversation_MouseDown;
+            // 
+            // contextMenuStrip_conversation
+            // 
+            this.contextMenuStrip_conversation.Items.AddRange(new ToolStripItem[] { this.setUserColorToolStripMenuItem, this.setAssistantColorToolStripMenuItem, this.fontSizeToolStripMenuItem });
+            this.contextMenuStrip_conversation.Name = "contextMenuStrip_conversation";
+            this.contextMenuStrip_conversation.Size = new Size(181, 92);
+            this.contextMenuStrip_conversation.Text = "Conversation settings";
+            // 
+            // setUserColorToolStripMenuItem
+            // 
+            this.setUserColorToolStripMenuItem.Name = "setUserColorToolStripMenuItem";
+            this.setUserColorToolStripMenuItem.Size = new Size(180, 22);
+            this.setUserColorToolStripMenuItem.Text = "Set user color";
+            this.setUserColorToolStripMenuItem.Click += this.setUserColorToolStripMenuItem_Click;
+            // 
+            // setAssistantColorToolStripMenuItem
+            // 
+            this.setAssistantColorToolStripMenuItem.Name = "setAssistantColorToolStripMenuItem";
+            this.setAssistantColorToolStripMenuItem.Size = new Size(180, 22);
+            this.setAssistantColorToolStripMenuItem.Text = "Set assistant color";
+            this.setAssistantColorToolStripMenuItem.Click += this.setAssistantColorToolStripMenuItem_Click;
+            // 
+            // fontSizeToolStripMenuItem
+            // 
+            this.fontSizeToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { this.toolStripComboBox_fontSize });
+            this.fontSizeToolStripMenuItem.Name = "fontSizeToolStripMenuItem";
+            this.fontSizeToolStripMenuItem.Size = new Size(180, 22);
+            this.fontSizeToolStripMenuItem.Text = "Font size";
+            // 
+            // toolStripComboBox_fontSize
+            // 
+            this.toolStripComboBox_fontSize.Items.AddRange(new object[] { "18", "16", "14", "13", "12", "11", "10", "9,5", " 9", "8,5", " 8", "7,5", " 7" });
+            this.toolStripComboBox_fontSize.Name = "toolStripComboBox_fontSize";
+            this.toolStripComboBox_fontSize.Size = new Size(121, 23);
+            this.toolStripComboBox_fontSize.Text = " 9";
+            this.toolStripComboBox_fontSize.SelectedIndexChanged += this.toolStripComboBox_fontSize_SelectedIndexChanged;
             // 
             // label_tokensGenerated
             // 
@@ -625,11 +670,21 @@
             this.listBox_llamaLog.TabIndex = 39;
             this.listBox_llamaLog.DoubleClick += this.listBox_llamaLog_DoubleClick;
             // 
+            // progressBar_modelLoading
+            // 
+            this.progressBar_modelLoading.Location = new Point(241, 41);
+            this.progressBar_modelLoading.Maximum = 1000;
+            this.progressBar_modelLoading.Name = "progressBar_modelLoading";
+            this.progressBar_modelLoading.Size = new Size(320, 10);
+            this.progressBar_modelLoading.TabIndex = 40;
+            this.progressBar_modelLoading.Visible = false;
+            // 
             // WindowMain
             // 
             this.AutoScaleDimensions = new SizeF(7F, 15F);
             this.AutoScaleMode = AutoScaleMode.Font;
             this.ClientSize = new Size(1424, 681);
+            this.Controls.Add(this.progressBar_modelLoading);
             this.Controls.Add(this.listBox_llamaLog);
             this.Controls.Add(this.listBox_ragEntries);
             this.Controls.Add(this.button_files);
@@ -677,6 +732,7 @@
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_temperature).EndInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_repetitionPenalty).EndInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_topP).EndInit();
+            this.contextMenuStrip_conversation.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_maxWidthPx).EndInit();
             ((System.ComponentModel.ISupportInitialize) this.numericUpDown_ragTopK).EndInit();
             this.contextMenuStrip_rag.ResumeLayout(false);
@@ -739,5 +795,11 @@
         private ToolStripTextBox toolStripTextBox_removeKeyword;
         private ToolStripMenuItem clearAllToolStripMenuItem;
         private ListBox listBox_llamaLog;
+        private ProgressBar progressBar_modelLoading;
+        private ContextMenuStrip contextMenuStrip_conversation;
+        private ToolStripMenuItem setUserColorToolStripMenuItem;
+        private ToolStripMenuItem setAssistantColorToolStripMenuItem;
+        private ToolStripMenuItem fontSizeToolStripMenuItem;
+        private ToolStripComboBox toolStripComboBox_fontSize;
     }
 }

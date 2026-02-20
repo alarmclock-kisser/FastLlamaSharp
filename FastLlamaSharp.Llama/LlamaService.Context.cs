@@ -1,6 +1,7 @@
 ﻿using FastLlamaSharp.Shared;
 using FastLlamaSharp.Shared.Llama;
 using LLama;
+using LLama.Abstractions;
 using LLama.Common;
 using System;
 using System.Collections.Generic;
@@ -86,6 +87,25 @@ namespace FastLlamaSharp.Llama
                     return null;
                 }
             }
+
+            if (forceRefresh || this._llamaContext == null)
+            {
+                // ... Context laden ...
+                this._llamaContext = this._llamaWeights.CreateContext(@params);
+
+                // --- NEUE LOGIK FÜR DAS FORMAT ---
+                string modelName = this.CurrentLoadedModelEntry?.DisplayName.ToLower() ?? "";
+                IHistoryTransform transform = modelName.Contains("gemma")
+                                              ? new GemmaHistoryTransform()
+                                              : new ChatMlHistoryTransform();
+
+                // Den Executor mit dem korrekten Transform aufbauen
+                this._globalExecutor = new InteractiveExecutor(this._llamaContext);
+                this._globalSession = new ChatSession(this._globalExecutor, this._currentChatHistory)
+                                        .WithHistoryTransform(transform);
+                // ---------------------------------
+            }
+
             return this._llamaContext;
         }
 
@@ -334,8 +354,13 @@ namespace FastLlamaSharp.Llama
                 }
 
                 // 4. Session mit dem synchronisierten Executor neu aufbauen
+                string modelName = this.CurrentLoadedModelEntry?.DisplayName.ToLower() ?? "";
+                IHistoryTransform transform = modelName.Contains("gemma")
+                                              ? new GemmaHistoryTransform()
+                                              : new ChatMlHistoryTransform();
+
                 this._globalSession = new ChatSession(this._globalExecutor, this._currentChatHistory)
-                                        .WithHistoryTransform(new ChatMlHistoryTransform());
+                                        .WithHistoryTransform(transform);
 
                 this.CurrentlySavedContextPath = folderPath;
 

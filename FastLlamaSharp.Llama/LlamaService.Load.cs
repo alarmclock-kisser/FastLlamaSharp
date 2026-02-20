@@ -90,6 +90,72 @@ namespace FastLlamaSharp.Llama
             }
         }
 
+        public async Task<bool> LoadModelAsync(LlamaModelLoadRequest loadRequest, IProgress<float>? progress = null, CancellationToken ct = default)
+        {
+            this._gpuLayerCount = loadRequest.GpuLayerCount;
+
+            try
+            {
+                ModelParams @params = new(loadRequest.ModelEntry.ModelFilePath)
+                {
+                    ContextSize = (uint) loadRequest.ContextSize,
+                    GpuLayerCount = loadRequest.GpuLayerCount,
+                    FlashAttention = false,
+                    BatchSize = 128,
+                    UBatchSize = 128,
+                };
+
+                await StaticLogger.LogAsync($"Loading model from {loadRequest.ModelEntry.ModelFilePath} with context size {@params.ContextSize} and GPU layer count {@params.GpuLayerCount}");
+
+                // Try load llamaWeights (main gguf file)
+                progress?.Report(0.0f);
+                this._llamaWeights = await LLamaWeights.LoadFromFileAsync(@params, ct, progress);
+
+
+                if (!string.IsNullOrEmpty(loadRequest.ModelEntry.MmprojFilePath) && loadRequest.TryLoadMmproj)
+                {
+                    await StaticLogger.LogAsync($"Attempting to load mmproj file from {loadRequest.ModelEntry.MmprojFilePath}");
+                    try
+                    {
+                        MtmdContextParams mtmdParams = new()
+                        {
+                            UseGpu = this._gpuLayerCount > 0 || this._gpuLayerCount == -1,
+                            Warmup = loadRequest.WarmupMmproj,
+                            FlashAttentionType = LLamaFlashAttentionType.LLAMA_FLASH_ATTENTION_TYPE_DISABLED
+                        };
+
+                        progress?.Report(0.85f);
+                        this._mtmdWeights = await MtmdWeights.LoadFromFileAsync(loadRequest.ModelEntry.MmprojFilePath, this._llamaWeights, mtmdParams, ct);
+                        progress?.Report(1.0f);
+                        await StaticLogger.LogAsync($"Successfully loaded mmproj file");
+                    }
+                    catch (Exception ex)
+                    {
+                        await StaticLogger.LogAsync($"Failed to load mmproj file: {ex.Message}");
+                        this._mtmdWeights = null;
+                    }
+                }
+                else
+                {
+                    loadRequest.ModelEntry.MmprojFilePath = null;
+                    loadRequest.WarmupMmproj = false;
+                    await StaticLogger.LogAsync($"No mmproj file path provided or tryLoadMmproj is false, skipping mmproj loading");
+                }
+
+                this.CurrentLoadedModelEntry = loadRequest.ModelEntry;
+
+                // Create context
+                this.GetOrCreateLlamaContext(@params, true);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                await StaticLogger.LogAsync($"Error loading model: {ex.Message}");
+                return false;
+            }
+        }
+
         public bool UnloadModel()
         {
             try

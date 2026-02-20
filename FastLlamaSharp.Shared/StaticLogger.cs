@@ -78,6 +78,8 @@ namespace FastLlamaSharp.Shared
                         LogEntriesBindingList.Add(logEntry);
                     }
                 }
+
+                LogAdded?.Invoke(logEntry);
             }
             else
             {
@@ -94,8 +96,6 @@ namespace FastLlamaSharp.Shared
                     }
                 }
             }
-
-            LogAdded?.Invoke(logEntry);
 
             Console.WriteLine(logEntry);
             if (LogFilePath != null)

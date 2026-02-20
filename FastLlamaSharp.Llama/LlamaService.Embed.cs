@@ -170,11 +170,8 @@ namespace FastLlamaSharp.Llama
         }
 
         /// <summary>
-        /// Reads a standard text file and chunks it intelligently by paragraphs.
-        /// </summary>
-        /// <summary>
-        /// Reads a standard text file and chunks it intelligently by paragraphs.
-        /// Includes the filename in the text so the LLM can find it by name.
+        /// Reads a standard text file and chunks it by a safe character limit (e.g., 1000 chars)
+        /// to prevent LLM context overflow.
         /// </summary>
         public async Task LoadTextFileAsync(string filePath)
         {
@@ -192,20 +189,19 @@ namespace FastLlamaSharp.Llama
 
                 await Task.Run(() =>
                 {
-                    // Smart Chunking: Split by double newlines (paragraphs)
-                    var paragraphs = content.Split(new[] { "\r\n\r\n", "\n\n" }, StringSplitOptions.RemoveEmptyEntries);
+                    // Safe Chunking: Strictly limit to 1000 characters to prevent Context Overflow!
+                    int chunkSize = 1000;
+                    var chunks = Enumerable.Range(0, (int) Math.Ceiling(content.Length / (double) chunkSize))
+                                           .Select(i => content.Substring(i * chunkSize, Math.Min(chunkSize, content.Length - i * chunkSize)));
 
-                    foreach (var para in paragraphs)
+                    foreach (var chunkText in chunks)
                     {
-                        string chunkText = para.Trim();
                         if (string.IsNullOrWhiteSpace(chunkText))
                         {
                             continue;
                         }
 
-                        // DER FIX: Wir fügen den Dateinamen SICHTBAR in den Chunk ein!
-                        string searchableChunk = $"[File: {sourceName}]\n{chunkText}";
-
+                        string searchableChunk = $"[File: {sourceName}]\n{chunkText.Trim()}";
                         var vector = Embed(searchableChunk);
                         this._internalVectorDb.Add(new RagEntry { Content = searchableChunk, Vector = vector, Source = sourceName });
                     }
