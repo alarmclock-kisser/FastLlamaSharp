@@ -197,7 +197,8 @@ namespace FastLlamaSharp.Llama
             };
 
             Stopwatch sw = Stopwatch.StartNew();
-            this.LastGenerationStats = new();
+            // Reset stats on start but keep the same instance (thread-safe updates inside GenerationStats)
+            this.LastGenerationStats.Reset();
             var userMessage = new ChatHistory.Message(AuthorRole.User, prompt);
 
             await foreach (var token in sessionToUse.ChatAsync(userMessage, inferenceParams, cancellationToken))
@@ -207,8 +208,9 @@ namespace FastLlamaSharp.Llama
                     break;
                 }
 
-                this.LastGenerationStats.TokensGenerated++;
-                this.LastGenerationStats.TotalGenerationTime = sw.Elapsed;
+                // Use thread-safe update methods
+                this.LastGenerationStats.IncrementToken();
+                this.LastGenerationStats.UpdateElapsed(sw.Elapsed);
                 yield return token;
             }
             sw.Stop();

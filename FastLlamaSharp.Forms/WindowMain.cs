@@ -1073,7 +1073,7 @@ namespace FastLlamaSharp.Forms
                 return;
             }
 
-            using OpenFileDialog ofd = new() { Multiselect = true, Filter = "JSON|*.json|Text|*.txt;*.log|Code|*.cs;*.py;*.js;*.java|All Files|*.*" };
+            using OpenFileDialog ofd = new() { Multiselect = true, Filter = "All Files|*.*|JSON|*.json|Text|*.txt;*.log|Code|*.cs;*.py;*.js;*.java" };
 
             if (ofd.ShowDialog() == DialogResult.OK)
             {
