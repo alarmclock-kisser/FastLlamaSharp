@@ -150,40 +150,70 @@ namespace FastLlamaSharp.Llama
             }
 
             // 2. Vision / MTMD Block mit ImageSharp Resizing
+            // 2. Vision / MTMD Block (STABIL VERSION)
             if (images != null && images.Length > 0 && this._mtmdWeights != null)
             {
-                // Wir holen den aktuellen Token-Stand als Startpunkt
-                int nPast = this.GetCurrentTokenCount();
-
                 foreach (var imagePath in images)
                 {
                     if (!File.Exists(imagePath))
-                    {
                         continue;
-                    }
 
                     try
                     {
                         await StaticLogger.LogAsync($"Processing Vision: {Path.GetFileName(imagePath)}");
-                        byte[] rawBytes = await File.ReadAllBytesAsync(imagePath, cancellationToken);
 
-                        // Hier nutzen wir ImageSharp für die Optimierung
-                        byte[] processedBytes = this.ResizeImageWithImageSharp(rawBytes, imageResizeMaxWidth);
+                        // ⚠️ WICHTIG: KV Cache komplett resetten
+                        this._llamaContext.NativeHandle.MemoryClear();
+                        await StaticLogger.LogAsync("KV Cache cleared before image embedding.");
+
+                        int nPast = 0;
+
+                        byte[] rawBytes = await File.ReadAllBytesAsync(imagePath, cancellationToken);
+                        await StaticLogger.LogAsync($"Original image size: {rawBytes.Length / 1024} KB");
+
+                        // Stabilere Resize Version verwenden
+                        byte[] processedBytes = this.ResizeImageForStability(rawBytes);
+                        await StaticLogger.LogAsync($"Processed image size: {processedBytes.Length / 1024} KB");
+
+                        var weightsHandle = this._mtmdWeights.NativeHandle.DangerousGetHandle();
+                        var ctxHandle = this._llamaContext.NativeHandle;
+
+                        if (weightsHandle == IntPtr.Zero)
+                            throw new Exception("Invalid MTMD weights handle");
+
+                        if (ctxHandle.IsInvalid)
+                            throw new Exception("Invalid llama context handle");
+
+                        await StaticLogger.LogAsync("Embedding image into model...");
 
                         using (var embed = this._mtmdWeights.LoadMedia(processedBytes))
                         {
-                            // Bild in den KV-Cache dekodieren
+                            var embedHandle = embed.DangerousGetHandle();
+
+                            if (embedHandle == IntPtr.Zero)
+                                throw new Exception("Invalid embed handle");
+
+                            await StaticLogger.LogAsync("Decoding image chunk into KV cache...");
+
+                            // BatchSize stabil clampen
+                            int batchSize = (int) this._llamaContext.Params.BatchSize;
+                            if (batchSize <= 0 || batchSize > 2048)
+                                batchSize = 512;
+
                             this._mtmdWeights.DecodeImageChunk(
-                                this._mtmdWeights.NativeHandle.DangerousGetHandle(),
-                                this._llamaContext.NativeHandle,
-                                embed.DangerousGetHandle(),
-                                ref nPast, 0, (int) this._llamaContext.Params.BatchSize);
+                                weightsHandle,
+                                ctxHandle,
+                                embedHandle,
+                                ref nPast,
+                                0,
+                                batchSize);
                         }
-                        await StaticLogger.LogAsync($"Image successfully embedded. New context position: {nPast}");
+
+                        await StaticLogger.LogAsync($"Image successfully embedded. nPast = {nPast}");
                     }
                     catch (Exception ex)
                     {
-                        await StaticLogger.LogAsync($"Vision Error: {ex.Message}");
+                        await StaticLogger.LogAsync($"Vision Error: {ex}");
                     }
                 }
             }
